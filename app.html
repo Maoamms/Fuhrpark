@@ -1,15 +1,63 @@
-<script>window.__fpStand = "01.10.2026 Schnellere Anmeldung";</script>
+<script>window.__fpStand = "01.10.2026 Rückmeldung beim Tippen";</script>
 <script>
 (function () {
 'use strict';
 
 /* ===== helpers ===== */
 const $ = (s, r = document) => r.querySelector(s);
+
+/**
+ * Zeigt an einem Knopf, dass seine Handlung laeuft - bis das Versprechen
+ * erfuellt ist.
+ *
+ * Bei Apps Script dauert fast jede Handlung ein bis drei Sekunden. Ohne
+ * Zeichen wirkte ein Knopf wie tot, man tippte ein zweites Mal - und
+ * loeste die Handlung doppelt aus. Jetzt ist er waehrenddessen gesperrt und
+ * dreht einen kleinen Kreisel. Scheitert die Handlung und hat sie das nicht
+ * selbst gemeldet, erscheint die Meldung; vorher passierte dann gar nichts.
+ */
+function beschaeftigt(knopf, versprechen) {
+  if (!knopf || !versprechen || typeof versprechen.then !== 'function') return versprechen;
+  knopf.classList.add('laeuft');
+  knopf.setAttribute('aria-busy', 'true');
+  if ('disabled' in knopf) knopf.disabled = true;
+  const fertig = () => {
+    knopf.classList.remove('laeuft');
+    knopf.removeAttribute('aria-busy');
+    if ('disabled' in knopf) knopf.disabled = false;
+  };
+  versprechen.then(fertig, fertig);
+  return versprechen;
+}
+
+/*
+ * Ein kurzes Antippen spueren - auf Android. iPhones erlauben Webseiten
+ * keine Vibration; dort bleibt es beim sichtbaren Druck-Effekt (CSS).
+ */
+function tippen() {
+  try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) {}
+}
+document.addEventListener('pointerdown', ev => {
+  const knopf = ev.target.closest && ev.target.closest('button, .btn, .lite, .iconbtn, [role=button]');
+  if (knopf && !knopf.disabled) tippen();
+}, { passive: true });
+
 const el = (t, a = {}, ...c) => {
   const e = document.createElement(t);
   for (const k in a) {
     if (k === 'class') e.className = a[k];
     else if (k === 'html') e.innerHTML = a[k];
+    else if (k === 'onclick') {
+      // Liefert die Handlung ein Versprechen, zeigt der Knopf "laeuft".
+      const handlung = a[k];
+      e.addEventListener('click', function (ev) {
+        if (e.classList.contains('laeuft')) return;   // laeuft schon
+        const r = handlung.call(this, ev);
+        if (r && typeof r.then === 'function') {
+          beschaeftigt(e, r).catch(f => toast('Nicht möglich: ' + (f && f.message ? f.message : 'Fehler')));
+        }
+      });
+    }
     else if (k.startsWith('on')) e.addEventListener(k.slice(2), a[k]);
     else e.setAttribute(k, a[k]);
   }
@@ -801,6 +849,7 @@ function modal(title, fields, onSave, optionen) {
     const data = {};
     body.querySelectorAll('[name]').forEach(i => { let v = i.value; if (i.type === 'number') v = v === '' ? '' : +v; data[i.name] = v; });
     save.disabled = true;
+    save.classList.add('laeuft');
     try {
       const r = await onSave(data);
       if (r !== false) { closeModal(); triggerRender(); }
@@ -810,6 +859,7 @@ function modal(title, fields, onSave, optionen) {
       fehlerfeld.scrollIntoView({ block: 'nearest' });
     } finally {
       save.disabled = false;
+      save.classList.remove('laeuft');
     }
   };
   body.append(fehlerfeld);
@@ -1715,10 +1765,12 @@ function renderLogin(onDone) {
       meldung.textContent = '';
       knopf.disabled = true;
       knopf.textContent = 'Prüft …';
+      knopf.classList.add('laeuft');
       signIn(p.id, feld.value)
         .then(daten => fertig(daten))
         .catch(fehler => {
           knopf.disabled = false;
+          knopf.classList.remove('laeuft');
           knopf.textContent = 'Anmelden';
           meldung.className = 'login-msg err';
           meldung.textContent = fehler.message;
@@ -5122,6 +5174,7 @@ function bestaetigen(dok, r, seitenzahl, hinweis) {
   const speichern = el('button', { class: 'btn' }, 'Eintragen');
   speichern.onclick = async () => {
     speichern.disabled = true;
+    speichern.classList.add('laeuft');
     try {
       await anlegen(dok, r, {
         vehicleId: fahrzeugWahl.value,
@@ -5143,6 +5196,7 @@ function bestaetigen(dok, r, seitenzahl, hinweis) {
       triggerRender();
     } catch (e) {
       speichern.disabled = false;
+      speichern.classList.remove('laeuft');
       toast('Speichern fehlgeschlagen: ' + (e.message || 'Fehler'));
     }
   };

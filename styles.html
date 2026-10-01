@@ -1182,4 +1182,33 @@ tr.anklickbar:focus-visible{outline:2px solid var(--tinte);outline-offset:-2px}
 .seite-akt{display:flex;gap:2px}
 .seite-akt .iconbtn{padding:4px 8px;min-width:30px}
 .seite-akt .iconbtn[disabled]{opacity:.3;cursor:default}
+
+/* ---------------- Rueckmeldung beim Antippen ----------------
+   Auf dem Handy gibt es kein :hover - ohne :active sah ein angetippter
+   Knopf aus wie ein nicht angetippter. Bei Apps Script dauert fast jede
+   Handlung ein bis drei Sekunden; ohne sichtbares Zeichen tippt man dann
+   ein zweites Mal. touch-action nimmt die Verzoegerung fuers Doppeltippen
+   weg, die manche Browser sonst vor jedem Tippen abwarten. */
+button,.btn,.lite,.iconbtn,[role=button]{touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+  transition:transform .08s ease-out,background .12s,opacity .12s}
+button:not(:disabled):active,.btn:not(:disabled):active,
+.lite:active,.iconbtn:not(:disabled):active{transform:scale(.96)}
+.btn:not(:disabled):active{background:#4D463C}
+.btn.ghost:not(:disabled):active,.lite:active,.iconbtn:not(:disabled):active{
+  background:#DED8CD}
+
+/* Laeuft gerade: Der Knopf bleibt in seiner Farbe (nicht grau wie
+   "gesperrt") und zeigt einen kleinen Kreisel. Doppeltippen ist gesperrt. */
+.laeuft{cursor:progress!important;opacity:.85}
+.btn.laeuft:disabled{background:var(--tinte)}
+.btn.ghost.laeuft:disabled{background:transparent}
+.laeuft::after{content:'';display:inline-block;flex:none;width:.95em;height:.95em;
+  margin-left:8px;border:2px solid currentColor;border-right-color:transparent;
+  border-radius:50%;vertical-align:-.15em;animation:dreht .7s linear infinite}
+@keyframes dreht{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){
+  .laeuft::after{animation:none;border-right-color:currentColor;opacity:.5}
+  button:active,.btn:active,.lite:active,.iconbtn:active{transform:none}
+}
 </style>
