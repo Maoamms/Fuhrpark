@@ -71,7 +71,7 @@ var TABELLEN = {
               'size', 'driveId', 'updatedAt'],
   fixcosts:  ['id', 'vehicleId', 'kind', 'amount', 'interval', 'date', 'note', 'updatedAt'],
   // docId: eine Notiz darf einen Beleg tragen – Foto vom Schaden, Angebot,
-  // Schriftwechsel. blatt() haengt die Spalte bei Bedarf hinten an.
+  // Schriftwechsel. blatt_() haengt die Spalte bei Bedarf hinten an.
   notes:     ['id', 'vehicleId', 'date', 'text', 'docId', 'updatedAt'],
 
   // Neu hinzugekommen
@@ -96,6 +96,30 @@ var AM_FAHRZEUG = ['intervals', 'events', 'docs', 'fixcosts', 'notes',
 
 var SITZUNG_STUNDEN = 12;
 
+/*
+ * Wer was aufrufen darf.
+ *
+ * google.script.run kann aus dem Browser JEDE Funktion dieses Projekts
+ * aufrufen - ausgenommen nur die, deren Name auf "_" endet. Alles, was nur
+ * der Server selbst braucht, traegt deshalb diesen Unterstrich. Frueher
+ * fehlte er, und jeder mit dem Link konnte etwa lies('profile') oder
+ * setzePasswort(...) direkt aufrufen - ganz ohne Anmeldung.
+ *
+ * Die Verwaltungsfunktionen weiter unten sollen im Skripteditor in der
+ * Auswahlliste stehen bleiben, duerfen also keinen Unterstrich bekommen.
+ * Sie pruefen stattdessen mit nurImEditor_(), dass der Eigentuemer selbst
+ * sie ausfuehrt. Ein Besucher der Web-App ist fuer Apps Script anonym
+ * (leere Adresse) - das genuegt als Unterscheidung.
+ */
+function nurImEditor_() {
+  var aktiv = '', eigner = '';
+  try { aktiv = Session.getActiveUser().getEmail(); } catch (e) {}
+  try { eigner = Session.getEffectiveUser().getEmail(); } catch (e) {}
+  if (!aktiv || aktiv !== eigner) {
+    throw new Error('Diese Funktion laeuft nur im Skripteditor.');
+  }
+}
+
 // ------------------------------------------------------------- Einstiegspunkt
 
 function doGet() {
@@ -117,7 +141,7 @@ function doGet() {
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
     '<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">'
   ].join('\n') + '\n'
-    + einbinden('styles') + '\n'
+    + einbinden_('styles') + '\n'
     + [
       '</head>',
       '<body>',
@@ -194,7 +218,7 @@ function doGet() {
       '}, 4000);',
       '</script>'
       ].join('\n') + '\n'
-    + einbinden('app') + '\n'
+    + einbinden_('app') + '\n'
     + [
       '</body>',
       '</html>'
@@ -206,18 +230,18 @@ function doGet() {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-/** Bindet Teildateien in index.html ein: <?!= einbinden('styles') ?> */
-function einbinden(datei) {
+/** Bindet Teildateien in index.html ein: <?!= einbinden_('styles') ?> */
+function einbinden_(datei) {
   return HtmlService.createHtmlOutputFromFile(datei).getContent();
 }
 
 // ------------------------------------------------------------- Ablage: Basis
 
-function eigenschaften() {
+function eigenschaften_() {
   return PropertiesService.getScriptProperties();
 }
 
-function zeitzone() {
+function zeitzone_() {
   try { return Session.getScriptTimeZone() || 'Europe/Berlin'; }
   catch (e) { return 'Europe/Berlin'; }
 }
@@ -245,14 +269,14 @@ var _zeilen = {};
 var _geprueft = {};
 
 /** Nach dem Schreiben muss der Bestand neu gelesen werden. */
-function vergiss(name) {
+function vergiss_(name) {
   if (name) delete _zeilen[name];
   else _zeilen = {};
 }
 
-function mappe() {
+function mappe_() {
   if (_mappe) return _mappe;
-  var props = eigenschaften();
+  var props = eigenschaften_();
   var id = props.getProperty('TABELLE_ID');
   if (id) {
     try { _mappe = SpreadsheetApp.openById(id); return _mappe; }
@@ -273,9 +297,9 @@ function mappe() {
 }
 
 /** Liefert ein Blatt mit garantierter Kopfzeile. */
-function blatt(name) {
+function blatt_(name) {
   if (_blaetter[name]) return _blaetter[name];
-  var ss = mappe();
+  var ss = mappe_();
   var b = ss.getSheetByName(name);
   var spalten = TABELLEN[name];
   if (!spalten) throw new Error('Unbekannter Datenbestand: ' + name);
@@ -296,7 +320,7 @@ function blatt(name) {
   // Sie wird hinten angehaengt – niemals eingefuegt: Die vorhandenen Zeilen
   // stehen in der Reihenfolge der alten Kopfzeile, und ein Einschub wuerde
   // jede Angabe rechts davon um eine Spalte verschieben.
-  var kopf = kopfVon(b);
+  var kopf = kopfVon_(b);
   var fehlend = [];
   for (var i = 0; i < spalten.length; i++) {
     if (kopf.indexOf(spalten[i]) === -1) fehlend.push(spalten[i]);
@@ -309,7 +333,7 @@ function blatt(name) {
 }
 
 /** Die Kopfzeile eines Blattes – sie bestimmt, wo welcher Wert steht. */
-function kopfVon(b) {
+function kopfVon_(b) {
   var breite = b.getLastColumn();
   if (!breite) return [];
   return b.getRange(1, 1, 1, breite).getValues()[0].map(function (w) {
@@ -317,8 +341,8 @@ function kopfVon(b) {
   });
 }
 
-function belegOrdner() {
-  var props = eigenschaften();
+function belegOrdner_() {
+  var props = eigenschaften_();
   var id = props.getProperty('ORDNER_ID');
   if (id) {
     try { return DriveApp.getFolderById(id); } catch (e) { /* neu anlegen */ }
@@ -342,15 +366,15 @@ function belegOrdner() {
  * Wandelt ein Blatt in Objekte. Leere Zeilen werden uebersprungen; das kommt
  * vor, wenn jemand direkt in der Tabelle Zeilen loescht.
  */
-function lies(name) {
+function lies_(name) {
   if (_zeilen[name]) return _zeilen[name];
 
   // Die Kopfzeile steckt in den gelesenen Daten - sie noch einmal einzeln zu
   // holen waeren zwei weitere Netzaufrufe je Bestand. Bei elf Bestaenden
   // waren das allein beim Start zweiundzwanzig ueberfluessige Wege.
-  var ss = mappe();
+  var ss = mappe_();
   var b = _blaetter[name] || ss.getSheetByName(name);
-  if (!b) b = blatt(name);
+  if (!b) b = blatt_(name);
   _blaetter[name] = b;
 
   var werte = b.getDataRange().getValues();
@@ -380,7 +404,7 @@ function lies(name) {
     // kuerzer als die Kopfzeile. Dann ist das Feld leer, nicht undefiniert.
     for (var s = 0; s < kopf.length; s++) {
       var w = werte[i][s];
-      o[kopf[s]] = entpacke(w === undefined ? '' : w);
+      o[kopf[s]] = entpacke_(w === undefined ? '' : w);
     }
     raus.push(o);
   }
@@ -397,10 +421,10 @@ function lies(name) {
  * Vortag. Mit UTC wuerde aus dem 1. November der 31. Oktober – jedes Datum
  * waere einen Tag zu frueh.
  */
-function entpacke(wert) {
+function entpacke_(wert) {
   if (wert === '' || wert === null || wert === undefined) return '';
   if (Object.prototype.toString.call(wert) === '[object Date]') {
-    return Utilities.formatDate(wert, zeitzone(), 'yyyy-MM-dd');
+    return Utilities.formatDate(wert, zeitzone_(), 'yyyy-MM-dd');
   }
   return wert;
 }
@@ -409,7 +433,7 @@ function entpacke(wert) {
  * Schuetzt die Tabelle davor, Nutzereingaben als Formel auszuwerten. Ein Wert
  * wie "=WENN(...)" oder "+49 170" wuerde sonst in Sheets zur Formel.
  */
-function entschaerfe(wert) {
+function entschaerfe_(wert) {
   if (typeof wert !== 'string') return wert;
   if (/^[=+\-@]/.test(wert)) return "'" + wert;
   return wert;
@@ -417,7 +441,7 @@ function entschaerfe(wert) {
 
 // --------------------------------------------------------- Ablage: Schreiben
 
-function neueId() {
+function neueId_() {
   return Utilities.getUuid().replace(/-/g, '').slice(0, 16);
 }
 
@@ -425,47 +449,47 @@ function neueId() {
  * Legt an oder aktualisiert – erkannt an der id. Gibt den geschriebenen
  * Datensatz zurueck, damit der Browser die vergebene Kennung kennt.
  */
-function schreibe(name, datensatz) {
+function schreibe_(name, datensatz) {
   var sperre = LockService.getScriptLock();
   sperre.waitLock(30000);
   try {
-    var b = blatt(name);
-    if (!datensatz.id) datensatz.id = neueId();
+    var b = blatt_(name);
+    if (!datensatz.id) datensatz.id = neueId_();
     datensatz.updatedAt = new Date().toISOString();
 
     // Geschrieben wird nach der Kopfzeile der Tabelle, nicht nach der
     // Reihenfolge im Code. Sonst landet ein spaeter eingefuegtes Feld unter
     // der falschen Ueberschrift und ueberschreibt eine bestehende Angabe.
-    var kopf = kopfVon(b);
+    var kopf = kopfVon_(b);
     var zeile = kopf.map(function (s) {
       var w = datensatz[s];
-      return entschaerfe(w === undefined || w === null ? '' : w);
+      return entschaerfe_(w === undefined || w === null ? '' : w);
     });
 
     var ids = b.getRange(1, 1, Math.max(b.getLastRow(), 1), 1).getValues();
     for (var i = 1; i < ids.length; i++) {
       if (ids[i][0] === datensatz.id) {
         b.getRange(i + 1, 1, 1, kopf.length).setValues([zeile]);
-        vergiss(name);
+        vergiss_(name);
         return datensatz;
       }
     }
     b.appendRow(zeile);
-    vergiss(name);
+    vergiss_(name);
     return datensatz;
   } finally {
     sperre.releaseLock();
   }
 }
 
-function entferne(name, id) {
+function entferne_(name, id) {
   var sperre = LockService.getScriptLock();
   sperre.waitLock(30000);
   try {
-    var b = blatt(name);
+    var b = blatt_(name);
     var ids = b.getRange(1, 1, Math.max(b.getLastRow(), 1), 1).getValues();
     for (var i = 1; i < ids.length; i++) {
-      if (ids[i][0] === id) { b.deleteRow(i + 1); vergiss(name); return true; }
+      if (ids[i][0] === id) { b.deleteRow(i + 1); vergiss_(name); return true; }
     }
     return false;
   } finally {
@@ -499,7 +523,7 @@ function entferne(name, id) {
  */
 var HASH_RUNDEN = 400;
 
-function alsHex(bytes) {
+function alsHex_(bytes) {
   return bytes.map(function (b) {
     return ('0' + (b & 0xFF).toString(16)).slice(-2);
   }).join('');
@@ -512,7 +536,7 @@ function alsHex(bytes) {
  * vorhandene Profile weiter anmelden koennen; beim naechsten erfolgreichen
  * Anmelden wird der Eintrag still auf die neue Rundenzahl gehoben.
  */
-function hashe(passwort, salt, runden) {
+function hashe_(passwort, salt, runden) {
   var n = runden ? Number(runden) : 1;
 
   // Die erste Runde geht ueber den Text, alle weiteren ueber die Bytes.
@@ -521,7 +545,7 @@ function hashe(passwort, salt, runden) {
   for (var i = 1; i < n; i++) {
     wert = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, wert);
   }
-  return alsHex(wert);
+  return alsHex_(wert);
 }
 
 /**
@@ -535,18 +559,18 @@ function hashe(passwort, salt, runden) {
  * Bei einer einzigen Runde sind beide Wege identisch; unterschiedlich wird
  * es erst ab der zweiten.
  */
-function hasheHex(passwort, salt, runden) {
+function hasheHex_(passwort, salt, runden) {
   var n = runden ? Number(runden) : 1;
   var wert = salt + '|' + passwort;
   for (var i = 0; i < n; i++) {
-    wert = alsHex(Utilities.computeDigest(
+    wert = alsHex_(Utilities.computeDigest(
       Utilities.DigestAlgorithm.SHA_256, wert, Utilities.Charset.UTF_8));
   }
   return wert;
 }
 
 /** Welche Rechenweise zu einem Profil gehoert. */
-function hashArtVon(profil) {
+function hashArtVon_(profil) {
   if (profil && profil.hashArt) return profil.hashArt;
   // Ohne Angabe: alles mit mehr als einer Runde stammt aus der alten Zeit.
   return (profil && Number(profil.runden) > 1) ? 'hex' : 'bytes';
@@ -559,9 +583,10 @@ function hashArtVon(profil) {
  * alles unter etwa einer halben Sekunde ist in Ordnung.
  */
 function misstHash() {
+  nurImEditor_();
   [100, 400, 1000, 4000].forEach(function (n) {
     var t = Date.now();
-    hashe('probewort', 'probesalz', n);
+    hashe_('probewort', 'probesalz', n);
     console.log(n + ' Runden: ' + (Date.now() - t) + ' ms');
   });
   console.log('Eingestellt sind ' + HASH_RUNDEN + ' Runden.');
@@ -573,7 +598,7 @@ function misstHash() {
  * Vergleich in konstanter Zeit. Bei einem frueh abbrechenden Vergleich liesse
  * sich aus der Antwortzeit ableiten, wie viele Zeichen stimmen.
  */
-function gleichSicher(a, b) {
+function gleichSicher_(a, b) {
   if (a.length !== b.length) return false;
   var unterschied = 0;
   for (var i = 0; i < a.length; i++) unterschied |= a.charCodeAt(i) ^ b.charCodeAt(i);
@@ -585,7 +610,7 @@ function gleichSicher(a, b) {
  * nur Anzeigename und Farbe – niemals Salt oder Hashwert.
  */
 function profilListe() {
-  return lies('profile').map(function (p) {
+  return lies_('profile').map(function (p) {
     return { id: p.id, name: p.name, farbe: p.farbe };
   });
 }
@@ -598,38 +623,38 @@ function profilListe() {
 var SPERRE_AB = 8;
 var SPERRE_MINUTEN = 15;
 
-function fehlversuche(profilId) {
+function fehlversuche_(profilId) {
   var roh = CacheService.getScriptCache().get('fehl_' + profilId);
   return roh ? Number(roh) : 0;
 }
 
-function merkeFehlversuch(profilId) {
-  var n = fehlversuche(profilId) + 1;
+function merkeFehlversuch_(profilId) {
+  var n = fehlversuche_(profilId) + 1;
   CacheService.getScriptCache().put('fehl_' + profilId, String(n), SPERRE_MINUTEN * 60);
   return n;
 }
 
 function anmelden(daten) {
-  var profile = lies('profile');
+  var profile = lies_('profile');
   var p = null;
   for (var i = 0; i < profile.length; i++) {
     if (profile[i].id === daten.profilId) { p = profile[i]; break; }
   }
 
   var kennung = p ? p.id : 'unbekannt';
-  if (fehlversuche(kennung) >= SPERRE_AB) {
+  if (fehlversuche_(kennung) >= SPERRE_AB) {
     throw new Error('Zu viele Fehlversuche. Bitte ' + SPERRE_MINUTEN + ' Minuten warten.');
   }
 
   // Auch bei unbekanntem Profil wird gehasht, damit die Antwortzeit nichts
   // darueber verraet, ob es das Profil ueberhaupt gibt.
   var runden = p && p.runden ? Number(p.runden) : 1;
-  var art = hashArtVon(p);
+  var art = hashArtVon_(p);
   var pruef = (art === 'hex')
-    ? hasheHex(String(daten.passwort || ''), p ? p.salt : 'x', runden)
-    : hashe(String(daten.passwort || ''), p ? p.salt : 'x', runden);
-  if (!p || !gleichSicher(pruef, String(p.hash))) {
-    var versuche = merkeFehlversuch(kennung);
+    ? hasheHex_(String(daten.passwort || ''), p ? p.salt : 'x', runden)
+    : hashe_(String(daten.passwort || ''), p ? p.salt : 'x', runden);
+  if (!p || !gleichSicher_(pruef, String(p.hash))) {
+    var versuche = merkeFehlversuch_(kennung);
     Utilities.sleep(700);
     throw new Error(versuche >= SPERRE_AB
       ? 'Zu viele Fehlversuche. Bitte ' + SPERRE_MINUTEN + ' Minuten warten.'
@@ -643,13 +668,13 @@ function anmelden(daten) {
   if (runden !== HASH_RUNDEN || art !== 'bytes') {
     p.runden = HASH_RUNDEN;
     p.hashArt = 'bytes';
-    p.hash = hashe(String(daten.passwort || ''), p.salt, HASH_RUNDEN);
-    schreibe('profile', p);
+    p.hash = hashe_(String(daten.passwort || ''), p.salt, HASH_RUNDEN);
+    schreibe_('profile', p);
   }
   var token = Utilities.getUuid() + Utilities.getUuid();
   var sitzung = JSON.stringify({ profilId: p.id, ablauf: Date.now() + SITZUNG_STUNDEN * 3600 * 1000 });
   CacheService.getScriptCache().put('sitzung_' + token, sitzung, 21600);
-  eigenschaften().setProperty('sitzung_' + token, sitzung);
+  eigenschaften_().setProperty('sitzung_' + token, sitzung);
   return { token: token, profil: { id: p.id, name: p.name, farbe: p.farbe, rolle: p.rolle } };
 }
 
@@ -662,7 +687,7 @@ function anmelden(daten) {
  * der Sitzungssuche und alles meldet "Nicht angemeldet", obwohl die
  * Anmeldung gerade erfolgreich war.
  */
-function tokenAus(daten) {
+function tokenAus_(daten) {
   if (!daten) return null;
   return (typeof daten === 'object') ? daten.token : daten;
 }
@@ -671,18 +696,18 @@ function tokenAus(daten) {
  * Herzstueck der Trennung: Aus dem Token wird das Profil ermittelt. Jede
  * Datenfunktion ruft das zuerst auf. Faellt es aus, passiert gar nichts.
  */
-function profilAusToken(token) {
-  token = tokenAus(token);
+function profilAusToken_(token) {
+  token = tokenAus_(token);
   if (!token) throw new Error('Nicht angemeldet.');
   var roh = CacheService.getScriptCache().get('sitzung_' + token);
-  if (!roh) roh = eigenschaften().getProperty('sitzung_' + token);
+  if (!roh) roh = eigenschaften_().getProperty('sitzung_' + token);
   if (!roh) throw new Error('Nicht angemeldet.');
   var s = JSON.parse(roh);
   if (s.ablauf < Date.now()) {
-    eigenschaften().deleteProperty('sitzung_' + token);
+    eigenschaften_().deleteProperty('sitzung_' + token);
     throw new Error('Anmeldung abgelaufen.');
   }
-  var profile = lies('profile');
+  var profile = lies_('profile');
   for (var i = 0; i < profile.length; i++) {
     if (profile[i].id === s.profilId) {
       return { id: profile[i].id, name: profile[i].name,
@@ -695,7 +720,7 @@ function profilAusToken(token) {
 function abmelden(token) {
   if (!token) return true;
   CacheService.getScriptCache().remove('sitzung_' + token);
-  eigenschaften().deleteProperty('sitzung_' + token);
+  eigenschaften_().deleteProperty('sitzung_' + token);
   return true;
 }
 
@@ -703,8 +728,8 @@ function abmelden(token) {
  * Entfernt abgelaufene Sitzungen. Ohne das wuechse der Eigenschaftsspeicher
  * mit jeder Anmeldung, die nie wieder benutzt wird – und er ist begrenzt.
  */
-function raeumeSitzungenAuf() {
-  var props = eigenschaften();
+function raeumeSitzungenAuf_() {
+  var props = eigenschaften_();
   var alle = props.getProperties();
   var jetzt = Date.now();
   var weg = 0;
@@ -730,8 +755,8 @@ function raeumeSitzungenAuf() {
  * und laesst sich vom Browser aus nicht setzen.
  */
 function holeAlles(daten) {
-  var profil = profilAusToken(tokenAus(daten));
-  var alle = lies('vehicles');
+  var profil = profilAusToken_(tokenAus_(daten));
+  var alle = lies_('vehicles');
   var meine = profil.rolle === 'verwalter' ? alle
     : alle.filter(function (f) { return f.profilId === profil.id; });
   var erlaubt = {};
@@ -739,12 +764,12 @@ function holeAlles(daten) {
 
   var daten = { profil: profil, vehicles: meine };
   AM_FAHRZEUG.forEach(function (name) {
-    daten[name] = lies(name).filter(function (z) { return erlaubt[z.vehicleId]; });
+    daten[name] = lies_(name).filter(function (z) { return erlaubt[z.vehicleId]; });
   });
 
   // Werkstaetten haengen am Profil, nicht am Fahrzeug – dieselbe Werkstatt
   // macht den Jumper und den Anhaenger.
-  daten.shops = lies('shops').filter(function (w) {
+  daten.shops = lies_('shops').filter(function (w) {
     return profil.rolle === 'verwalter' || w.profilId === profil.id;
   });
 
@@ -755,9 +780,9 @@ function holeAlles(daten) {
 // ------------------------------------------------------------ Daten schreiben
 
 /** Prueft, ob ein Fahrzeug dem angemeldeten Profil gehoert. */
-function gehoertMir(profil, vehicleId) {
+function gehoertMir_(profil, vehicleId) {
   if (!vehicleId) return false;
-  var alle = lies('vehicles');
+  var alle = lies_('vehicles');
   for (var i = 0; i < alle.length; i++) {
     if (alle[i].id === vehicleId) {
       return profil.rolle === 'verwalter' || alle[i].profilId === profil.id;
@@ -767,7 +792,7 @@ function gehoertMir(profil, vehicleId) {
 }
 
 function speichere(daten) {
-  var profil = profilAusToken(daten.token);
+  var profil = profilAusToken_(daten.token);
   var name = daten.bestand;
   var satz = daten.datensatz || {};
   if (!TABELLEN[name]) throw new Error('Unbekannter Datenbestand.');
@@ -783,7 +808,7 @@ function speichere(daten) {
     // Fahrzeug abgelehnt: Die Suche danach ging ins Leere, und das sah aus
     // wie ein fremdes Fahrzeug.
     var vorhanden = satz.id
-      ? lies('vehicles').filter(function (f) { return f.id === satz.id; })[0]
+      ? lies_('vehicles').filter(function (f) { return f.id === satz.id; })[0]
       : null;
     if (vorhanden) {
       if (profil.rolle !== 'verwalter' && vorhanden.profilId !== profil.id) {
@@ -797,7 +822,7 @@ function speichere(daten) {
     // Werkstaetten gehoeren dem Profil. Wie beim Fahrzeug wird der Besitzer
     // serverseitig gesetzt, damit der Browser ihn nicht faelschen kann.
     if (satz.id) {
-      var alteW = lies('shops').filter(function (w) { return w.id === satz.id; })[0];
+      var alteW = lies_('shops').filter(function (w) { return w.id === satz.id; })[0];
       if (alteW && profil.rolle !== 'verwalter' && alteW.profilId !== profil.id) {
         throw new Error('Kein Zugriff auf diese Werkstatt.');
       }
@@ -806,7 +831,23 @@ function speichere(daten) {
       satz.profilId = profil.id;
     }
   } else {
-    if (!gehoertMir(profil, satz.vehicleId)) throw new Error('Kein Zugriff auf dieses Fahrzeug.');
+    if (!gehoertMir_(profil, satz.vehicleId)) throw new Error('Kein Zugriff auf dieses Fahrzeug.');
+
+    // Geprueft werden muss auch der Satz, der UNTER DIESER KENNUNG schon
+    // steht. schreibe_() ersetzt nach der id - ohne diese Pruefung liesse
+    // sich ein fremder Eintrag ueberschreiben, indem man das eigene
+    // Fahrzeug mitschickt.
+    var alt = satz.id
+      ? lies_(name).filter(function (z) { return z.id === satz.id; })[0]
+      : null;
+    if (alt && !gehoertMir_(profil, alt.vehicleId)) {
+      throw new Error('Kein Zugriff auf diesen Eintrag.');
+    }
+
+    // Die Drive-Kennung eines Belegs vergibt nur der Server beim Hochladen.
+    // Kaeme sie aus dem Browser, liesse sich ueber holeBeleg() jede Datei im
+    // Drive des Eigentuemers abrufen.
+    if (name === 'docs') satz.driveId = alt ? alt.driveId : '';
   }
 
   // Wird ein Termin bearbeitet – etwa weil die Wartung erledigt ist –, faengt
@@ -815,49 +856,49 @@ function speichere(daten) {
 
   // Ein neuer Kilometerstand aktualisiert auch das Fahrzeug – die Ansichten
   // lesen dort den aktuellen Stand.
-  var geschrieben = schreibe(name, satz);
-  if (name === 'kmlog' && satz.km) aktualisiereKmAmFahrzeug(satz.vehicleId);
+  var geschrieben = schreibe_(name, satz);
+  if (name === 'kmlog' && satz.km) aktualisiereKmAmFahrzeug_(satz.vehicleId);
   return geschrieben;
 }
 
 /** Traegt den juengsten Stand aus dem Verlauf am Fahrzeug nach. */
-function aktualisiereKmAmFahrzeug(vehicleId) {
-  var staende = lies('kmlog').filter(function (k) {
+function aktualisiereKmAmFahrzeug_(vehicleId) {
+  var staende = lies_('kmlog').filter(function (k) {
     return k.vehicleId === vehicleId && k.km;
   }).sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
   if (!staende.length) return;
 
-  var fahrzeuge = lies('vehicles');
+  var fahrzeuge = lies_('vehicles');
   for (var i = 0; i < fahrzeuge.length; i++) {
     if (fahrzeuge[i].id === vehicleId) {
       fahrzeuge[i].km = staende[0].km;
       fahrzeuge[i].kmDate = staende[0].date;
-      schreibe('vehicles', fahrzeuge[i]);
+      schreibe_('vehicles', fahrzeuge[i]);
       return;
     }
   }
 }
 
 function loesche(daten) {
-  var profil = profilAusToken(daten.token);
+  var profil = profilAusToken_(daten.token);
   var name = daten.bestand;
   if (!TABELLEN[name]) throw new Error('Unbekannter Datenbestand.');
   if (name === 'profile') throw new Error('Profile werden hier nicht geloescht.');
 
-  var alle = lies(name);
+  var alle = lies_(name);
   var satz = null;
   for (var i = 0; i < alle.length; i++) if (alle[i].id === daten.id) { satz = alle[i]; break; }
   if (!satz) return true;
 
   if (name === 'vehicles') {
-    if (!gehoertMir(profil, satz.id)) throw new Error('Kein Zugriff auf dieses Fahrzeug.');
+    if (!gehoertMir_(profil, satz.id)) throw new Error('Kein Zugriff auf dieses Fahrzeug.');
     // Alles, was am Fahrzeug haengt, muss mit weg – sonst bleiben Waisen in
     // der Tabelle, die niemand mehr sieht und niemand mehr loeschen kann.
     AM_FAHRZEUG.forEach(function (bestand) {
-      lies(bestand).forEach(function (z) {
+      lies_(bestand).forEach(function (z) {
         if (z.vehicleId === satz.id) {
-          if (bestand === 'docs' && z.driveId) loescheDatei(z.driveId);
-          entferne(bestand, z.id);
+          if (bestand === 'docs' && z.driveId) loescheDatei_(z.driveId);
+          entferne_(bestand, z.id);
         }
       });
     });
@@ -866,13 +907,13 @@ function loesche(daten) {
       throw new Error('Kein Zugriff auf diese Werkstatt.');
     }
   } else {
-    if (!gehoertMir(profil, satz.vehicleId)) throw new Error('Kein Zugriff auf dieses Fahrzeug.');
-    if (name === 'docs' && satz.driveId) loescheDatei(satz.driveId);
+    if (!gehoertMir_(profil, satz.vehicleId)) throw new Error('Kein Zugriff auf dieses Fahrzeug.');
+    if (name === 'docs' && satz.driveId) loescheDatei_(satz.driveId);
   }
-  return entferne(name, daten.id);
+  return entferne_(name, daten.id);
 }
 
-function loescheDatei(driveId) {
+function loescheDatei_(driveId) {
   try { DriveApp.getFileById(driveId).setTrashed(true); }
   catch (e) { /* schon weg */ }
 }
@@ -891,8 +932,8 @@ function loescheDatei(driveId) {
 var MAX_BYTES = 25 * 1024 * 1024;
 
 /** Unterordner je Fahrzeug, damit der Hauptordner uebersichtlich bleibt. */
-function fahrzeugOrdner(vehicleId, anzeigename) {
-  var props = eigenschaften();
+function fahrzeugOrdner_(vehicleId, anzeigename) {
+  var props = eigenschaften_();
   var schluessel = 'ORDNER_F_' + vehicleId;
   var id = props.getProperty(schluessel);
   if (id) {
@@ -903,7 +944,7 @@ function fahrzeugOrdner(vehicleId, anzeigename) {
   try {
     id = props.getProperty(schluessel);
     if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
-    var neu = belegOrdner().createFolder(anzeigename || vehicleId);
+    var neu = belegOrdner_().createFolder(anzeigename || vehicleId);
     props.setProperty(schluessel, neu.getId());
     return neu;
   } finally {
@@ -916,21 +957,23 @@ function fahrzeugOrdner(vehicleId, anzeigename) {
  * Browser vorher – hier kommt also selten etwas Grosses an.
  */
 function ladeBelegHoch(daten) {
-  var profil = profilAusToken(daten.token);
-  if (!gehoertMir(profil, daten.vehicleId)) throw new Error('Kein Zugriff auf dieses Fahrzeug.');
+  var profil = profilAusToken_(daten.token);
+  if (!gehoertMir_(profil, daten.vehicleId)) throw new Error('Kein Zugriff auf dieses Fahrzeug.');
 
   var bytes = Utilities.base64Decode(daten.base64);
   if (bytes.length > MAX_BYTES) throw new Error('Die Datei ist zu gross (max. 25 MB).');
 
   var blob = Utilities.newBlob(bytes, daten.mime || 'application/octet-stream',
                                daten.name || 'Beleg');
-  var fahrzeug = lies('vehicles').filter(function (f) { return f.id === daten.vehicleId; })[0];
-  var ordner = fahrzeugOrdner(daten.vehicleId,
+  var fahrzeug = lies_('vehicles').filter(function (f) { return f.id === daten.vehicleId; })[0];
+  var ordner = fahrzeugOrdner_(daten.vehicleId,
     fahrzeug ? (fahrzeug.name || fahrzeug.plate) : null);
   var datei = ordner.createFile(blob);
 
-  return schreibe('docs', {
-    id: daten.id || null,
+  return schreibe_('docs', {
+    // Immer eine neue Kennung: Eine mitgeschickte haette einen vorhandenen,
+    // womoeglich fremden Eintrag ueberschrieben.
+    id: null,
     vehicleId: daten.vehicleId,
     category: daten.category || 'Beleg',
     title: daten.title || daten.name || 'Beleg',
@@ -947,10 +990,10 @@ function ladeBelegHoch(daten) {
  * angemeldeten Profils gehoert.
  */
 function holeBeleg(daten) {
-  var profil = profilAusToken(daten.token);
-  var dok = lies('docs').filter(function (d) { return d.id === daten.id; })[0];
+  var profil = profilAusToken_(daten.token);
+  var dok = lies_('docs').filter(function (d) { return d.id === daten.id; })[0];
   if (!dok) throw new Error('Beleg nicht gefunden.');
-  if (!gehoertMir(profil, dok.vehicleId)) throw new Error('Kein Zugriff auf diesen Beleg.');
+  if (!gehoertMir_(profil, dok.vehicleId)) throw new Error('Kein Zugriff auf diesen Beleg.');
 
   var blob = DriveApp.getFileById(dok.driveId).getBlob();
   return {
@@ -975,8 +1018,14 @@ function erkennungStand(daten) {
   // Auch diese Auskunft gibt es nur fuer Angemeldete. Sie verraet zwar nur,
   // ob ein Schluessel hinterlegt ist – aber ohne Pruefung koennte jeder mit
   // dem Link das abfragen, und die Regel "erst anmelden" gilt ueberall gleich.
-  if (daten) profilAusToken(daten);
-  var props = eigenschaften();
+  // Frueher hiess es hier "if (daten)" - ohne Argument entfiel die Pruefung.
+  profilAusToken_(daten);
+  return erkennungStand_();
+}
+
+/** Dasselbe ohne Anmeldung - nur fuer den Server selbst. */
+function erkennungStand_() {
+  var props = eigenschaften_();
   var claude = !!props.getProperty('CLAUDE_KEY');
   var gemini = !!props.getProperty('GEMINI_KEY');
   var wunsch = props.getProperty('ERKENNUNG') || '';
@@ -1051,37 +1100,37 @@ var CLAUDE_SCHEMA = (function () {
  * Kontrolle an, bevor etwas gespeichert wird.
  */
 function erkenneBeleg(daten) {
-  profilAusToken(daten.token);
-  var stand = erkennungStand();
+  profilAusToken_(daten.token);
+  var stand = erkennungStand_();
   if (!stand.aktiv) {
     throw new Error('Kein Schluessel fuer die Belegerkennung hinterlegt. Siehe Einrichtung.');
   }
-  var lies = function (welcher) {
-    return welcher === 'claude' ? erkenneMitClaude(daten) : erkenneMitGemini(daten);
+  var lese = function (welcher) {
+    return welcher === 'claude' ? erkenneMitClaude_(daten) : erkenneMitGemini_(daten);
   };
   var erstes;
   try {
-    erstes = lies(stand.aktiv);
+    erstes = lese(stand.aktiv);
   } catch (e) {
     // Ausweg, wenn der erste ueberlastet ist oder das Guthaben fehlt.
     // Gibt es keinen, bleibt der urspruengliche Fehler.
     if (!stand.zweit) throw e;
-    return lies(stand.zweit);
+    return lese(stand.zweit);
   }
   // "Nicht weitergekommen" heisst nicht nur "Fehler": Ein Beleg, von dem nichts
   // Brauchbares zurueckkommt, ist genauso ein Fall fuer den zweiten. Bringt der
   // auch nichts, bleibt es beim ersten Ergebnis.
-  if (stand.zweit && ausbeute(erstes) === 0) {
+  if (stand.zweit && ausbeute_(erstes) === 0) {
     try {
-      var zweites = lies(stand.zweit);
-      if (ausbeute(zweites) > 0) return zweites;
+      var zweites = lese(stand.zweit);
+      if (ausbeute_(zweites) > 0) return zweites;
     } catch (e2) {}
   }
   return erstes;
 }
 
 /** Wie viele der Felder gefuellt sind, auf die es beim Uebernehmen ankommt. */
-function ausbeute(r) {
+function ausbeute_(r) {
   if (!r) return 0;
   return ['date', 'cost', 'title', 'shop', 'km'].filter(function (f) {
     return r[f] !== null && r[f] !== undefined && r[f] !== '';
@@ -1104,7 +1153,7 @@ var VORUEBERGEHEND = [429, 500, 502, 503, 504, 529];
  * Versuche lohnen nicht - Apps Script bricht eine Ausfuehrung nach sechs
  * Minuten ohnehin ab, und der Mensch davor wartet nicht ewig.
  */
-function holeMitGeduld(adresse, einstellungen, eigeneWartezeiten) {
+function holeMitGeduld_(adresse, einstellungen, eigeneWartezeiten) {
   var wartezeiten = eigeneWartezeiten || [1000, 3000];
   var antwort = null;
   for (var versuch = 0; versuch <= wartezeiten.length; versuch++) {
@@ -1134,8 +1183,8 @@ function holeMitGeduld(adresse, einstellungen, eigeneWartezeiten) {
    pruefeGemini(); abweichen laesst sich ueber GEMINI_MODELLE. */
 var GEMINI_MODELLE = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
 
-function geminiModelle() {
-  var eigene = (eigenschaften().getProperty('GEMINI_MODELLE') || '').split(',')
+function geminiModelle_() {
+  var eigene = (eigenschaften_().getProperty('GEMINI_MODELLE') || '').split(',')
     .map(function (m) { return m.trim(); }).filter(Boolean);
   return eigene.length ? eigene : GEMINI_MODELLE;
 }
@@ -1147,18 +1196,18 @@ function geminiModelle() {
  * einzelne Datei in base64/mime - die Form bleibt gueltig, damit ein noch
  * nicht ausgetauschter Browser weiterarbeitet.
  */
-function belegSeiten(daten) {
+function belegSeiten_(daten) {
   if (daten.seiten && daten.seiten.length) return daten.seiten;
   if (daten.base64) return [{ base64: daten.base64, mime: daten.mime }];
   return [];
 }
 
-function erkenneMitGemini(daten) {
-  var schluessel = eigenschaften().getProperty('GEMINI_KEY');
+function erkenneMitGemini_(daten) {
+  var schluessel = eigenschaften_().getProperty('GEMINI_KEY');
   // Alle Seiten in einer Anfrage - das Modell sieht den Beleg im
   // Zusammenhang, statt Seite fuer Seite geraten zu muessen.
   var teile = [{ text: BELEG_AUFTRAG }];
-  belegSeiten(daten).forEach(function (s) {
+  belegSeiten_(daten).forEach(function (s) {
     teile.push({ inline_data: { mime_type: s.mime, data: s.base64 } });
   });
 
@@ -1178,7 +1227,7 @@ function erkenneMitGemini(daten) {
     muteHttpExceptions: true
   };
 
-  var modelle = geminiModelle();
+  var modelle = geminiModelle_();
   var letzterCode = 0;
   var letzterGrund = '';
 
@@ -1186,7 +1235,7 @@ function erkenneMitGemini(daten) {
     // Nur beim letzten Modell lohnt das Warten - vorher ist der Wechsel
     // auf das naechste schneller als jede Pause.
     var wartezeiten = (i === modelle.length - 1) ? [1000, 3000] : [];
-    var antwort = holeMitGeduld(
+    var antwort = holeMitGeduld_(
       'https://generativelanguage.googleapis.com/v1beta/models/' +
       modelle[i] + ':generateContent', einstellungen, wartezeiten);
 
@@ -1230,23 +1279,27 @@ function erkenneMitGemini(daten) {
  * antwortet ueber ein Werkzeug. Das erzwingt dieselben Felder wie bei Gemini,
  * statt sie aus Fliesstext herauszulesen.
  */
-function erkenneMitClaude(daten) {
-  var schluessel = eigenschaften().getProperty('CLAUDE_KEY');
-  var inhalt = belegSeiten(daten).map(function (s) {
+function erkenneMitClaude_(daten) {
+  var schluessel = eigenschaften_().getProperty('CLAUDE_KEY');
+  var inhalt = belegSeiten_(daten).map(function (s) {
     var mime = s.mime || 'image/jpeg';
     return mime === 'application/pdf'
       ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: s.base64 } }
       : { type: 'image',    source: { type: 'base64', media_type: mime,              data: s.base64 } };
   });
 
-  var antwort = holeMitGeduld('https://api.anthropic.com/v1/messages', {
+  var antwort = holeMitGeduld_('https://api.anthropic.com/v1/messages', {
     method: 'post',
     contentType: 'application/json',
     headers: { 'x-api-key': schluessel, 'anthropic-version': '2023-06-01' },
     payload: JSON.stringify({
-      model: eigenschaften().getProperty('CLAUDE_MODELL') || 'claude-sonnet-5',
+      model: eigenschaften_().getProperty('CLAUDE_MODELL') || 'claude-sonnet-5',
+      // Kein temperature: Claude Sonnet 5 und neuer lehnen den Parameter mit
+      // Fehler 400 ab - die Erkennung waere bei jedem Beleg gescheitert.
+      // Ebenso wichtig: Neuere Modelle (Sonnet 5.5, Opus 5.5) erlauben das
+      // erzwungene tool_choice unten nicht mehr. Wer CLAUDE_MODELL auf so ein
+      // Modell stellt, muss tool_choice auf 'auto' umbauen.
       max_tokens: 1024,
-      temperature: 0,
       tools: [{ name: 'beleg', description: 'Die auf dem Beleg gefundenen Angaben.',
                 input_schema: CLAUDE_SCHEMA }],
       tool_choice: { type: 'tool', name: 'beleg' },
@@ -1292,14 +1345,14 @@ var STUFEN = [180, 90, 60, 30, 14, 7, 1, 0];
 // js/interval-status.js – Ansicht und Mail duerfen nicht auseinanderlaufen.
 var VORWARNUNG_STANDARD = 30;
 
-function vorwarnungFuer(satz) {
+function vorwarnungFuer_(satz) {
   var eigen = satz.leadDays;
   if (eigen === '' || eigen === null || eigen === undefined) return VORWARNUNG_STANDARD;
   var zahl = Number(eigen);
   return isNaN(zahl) ? VORWARNUNG_STANDARD : zahl;
 }
 
-function heuteNull() {
+function heuteNull_() {
   var d = new Date();
   d.setHours(0, 0, 0, 0);
   return d;
@@ -1311,7 +1364,7 @@ function heuteNull() {
  * Folgemonat verschoben – sonst erschiene ein Termin im Maerz, den niemand so
  * eingetragen hat. Das kann vorkommen, wenn jemand direkt in der Tabelle tippt.
  */
-function alsDatum(text) {
+function alsDatum_(text) {
   if (!text) return null;
   var teile = String(text).slice(0, 10).split('-');
   if (teile.length !== 3) return null;
@@ -1323,8 +1376,8 @@ function alsDatum(text) {
   return d;
 }
 
-function tageBis(datum) {
-  return Math.round((datum - heuteNull()) / 86400000);
+function tageBis_(datum) {
+  return Math.round((datum - heuteNull_()) / 86400000);
 }
 
 /**
@@ -1333,7 +1386,7 @@ function tageBis(datum) {
  * 3. Maerz, weil der Februar keinen 31. hat. Fuer Wartungstermine ist das
  * falsch – gemeint ist das Monatsende.
  */
-function plusMonate(datum, monate) {
+function plusMonate_(datum, monate) {
   var tag = datum.getDate();
   var ziel = new Date(datum.getTime());
   ziel.setDate(1);
@@ -1348,20 +1401,20 @@ function plusMonate(datum, monate) {
  * weniger als zwei Staenden ist keine Aussage moeglich – dann liefert die
  * Funktion 0 und Kilometertermine bleiben ohne Datum.
  */
-function kmProTagFuer(vehicleId, kmlog) {
+function kmProTagFuer_(vehicleId, kmlog) {
   var meine = kmlog
     .filter(function (k) { return k.vehicleId === vehicleId && k.date && k.km; })
-    .sort(function (a, b) { return alsDatum(a.date) - alsDatum(b.date); });
+    .sort(function (a, b) { return alsDatum_(a.date) - alsDatum_(b.date); });
   if (meine.length < 2) return 0;
 
   var erst = meine[0], letzt = meine[meine.length - 1];
-  var tage = (alsDatum(letzt.date) - alsDatum(erst.date)) / 86400000;
+  var tage = (alsDatum_(letzt.date) - alsDatum_(erst.date)) / 86400000;
   var km = Number(letzt.km) - Number(erst.km);
   if (tage <= 0 || km <= 0) return 0;
   return km / tage;
 }
 
-function aktuellerKm(fahrzeug, kmlog) {
+function aktuellerKm_(fahrzeug, kmlog) {
   var meine = kmlog
     .filter(function (k) { return k.vehicleId === fahrzeug.id && k.km; })
     .sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
@@ -1375,26 +1428,26 @@ function aktuellerKm(fahrzeug, kmlog) {
  * eintritt. Das entspricht dem, was Werkstaetten "je nachdem, was zuerst
  * eintritt" nennen.
  */
-function naechsteFaelligkeit(iv, kmProTag, jetztKm) {
+function naechsteFaelligkeit_(iv, kmProTag, jetztKm) {
   var ergebnis = { datum: null, km: null, tage: null };
 
   // Ein fest eingetragener Termin geht vor – er steht auf der Plakette oder
   // im Brief und muss nicht aus dem letzten Mal zurueckgerechnet werden.
   if (iv.dueDate) {
-    var fest = alsDatum(iv.dueDate);
+    var fest = alsDatum_(iv.dueDate);
     if (fest) {
       ergebnis.datum = fest;
-      ergebnis.tage = tageBis(fest);
+      ergebnis.tage = tageBis_(fest);
       return ergebnis;
     }
   }
 
   if (iv.lastDate && iv.intervalMonths) {
-    var basis = alsDatum(iv.lastDate);
+    var basis = alsDatum_(iv.lastDate);
     if (basis) {
-      var d = plusMonate(basis, Number(iv.intervalMonths));
+      var d = plusMonate_(basis, Number(iv.intervalMonths));
       ergebnis.datum = d;
-      ergebnis.tage = tageBis(d);
+      ergebnis.tage = tageBis_(d);
     }
   }
   if (iv.lastKm && iv.intervalKm) {
@@ -1405,7 +1458,7 @@ function naechsteFaelligkeit(iv, kmProTag, jetztKm) {
       var tageKm = Math.round((ergebnis.km - jetztKm) / kmProTag);
       if (ergebnis.tage === null || tageKm < ergebnis.tage) {
         ergebnis.tage = tageKm;
-        var dk = new Date(heuteNull().getTime() + tageKm * 86400000);
+        var dk = new Date(heuteNull_().getTime() + tageKm * 86400000);
         if (ergebnis.datum === null || dk < ergebnis.datum) ergebnis.datum = dk;
       }
     }
@@ -1418,7 +1471,7 @@ function naechsteFaelligkeit(iv, kmProTag, jetztKm) {
  * Gesucht ist die dringendste Stufe, die der Termin schon erreicht hat – bei
  * 5 Tagen Rest also 7, nicht 60.
  */
-function stufeFuer(tage, vorwarn) {
+function stufeFuer_(tage, vorwarn) {
   if (tage === null || tage === undefined) return null;
   var grenze = (vorwarn === undefined || vorwarn === null) ? VORWARNUNG_STANDARD : vorwarn;
   // Ausserhalb der eingestellten Vorwarnzeit wird gar nicht gemeldet.
@@ -1435,15 +1488,15 @@ function stufeFuer(tage, vorwarn) {
 
 /** Taeglicher Auftrag. Einrichten ueber richteErinnerungEin(). */
 function taeglichePruefung() {
-  raeumeSitzungenAuf();
+  raeumeSitzungenAuf_();
 
-  var profile = lies('profile').filter(function (p) { return p.email; });
+  var profile = lies_('profile').filter(function (p) { return p.email; });
   if (!profile.length) return;
 
-  var fahrzeuge = lies('vehicles');
-  var intervals = lies('intervals');
-  var deadlines = lies('deadlines');
-  var kmlog = lies('kmlog');
+  var fahrzeuge = lies_('vehicles');
+  var intervals = lies_('intervals');
+  var deadlines = lies_('deadlines');
+  var kmlog = lies_('kmlog');
 
   profile.forEach(function (profil) {
     var meine = profil.rolle === 'verwalter' ? fahrzeuge
@@ -1453,25 +1506,36 @@ function taeglichePruefung() {
     var faellig = [];
 
     meine.forEach(function (f) {
-      var proTag = kmProTagFuer(f.id, kmlog);
-      var jetztKm = aktuellerKm(f, kmlog);
+      var proTag = kmProTagFuer_(f.id, kmlog);
+      var jetztKm = aktuellerKm_(f, kmlog);
 
       intervals.filter(function (iv) { return iv.vehicleId === f.id; }).forEach(function (iv) {
-        var n = naechsteFaelligkeit(iv, proTag, jetztKm);
-        if (n.tage === null) return;
-        var stufe = stufeFuer(n.tage, vorwarnungFuer(iv));
+        var n = naechsteFaelligkeit_(iv, proTag, jetztKm);
+        var vorwarn = vorwarnungFuer_(iv);
+        var stufe = n.tage === null ? null : stufeFuer_(n.tage, vorwarn);
+
+        // Kilometertermine wie in der App: bald faellig ab VORWARNUNG_KM
+        // Rest, ueberfaellig unter null. Frueher zaehlten Kilometer hier nur,
+        // wenn sich aus zwei Kilometerstaenden eine Fahrleistung schaetzen
+        // liess - ohne diesen Verlauf kam fuer einen reinen Kilometertermin
+        // nie eine Mail, obwohl die App ihn laengst rot zeigte.
+        var kmRest = (n.km !== null && jetztKm > 0) ? n.km - jetztKm : null;
+        if (kmRest !== null && kmRest <= VORWARNUNG_KM) {
+          var kmStufe = kmRest < 0 ? 0 : stufeFuer_(vorwarn, vorwarn);
+          if (stufe === null || kmStufe < stufe) stufe = kmStufe;
+        }
         if (stufe === null) return;
         var schon = (iv.reported === '' || iv.reported === null) ? null : Number(iv.reported);
         if (schon !== null && schon <= stufe) return;
         faellig.push({ fahrzeug: f, kind: iv.kind, tage: n.tage, datum: n.datum,
-                       bestand: 'intervals', id: iv.id, stufe: stufe });
+                       kmRest: kmRest, bestand: 'intervals', id: iv.id, stufe: stufe });
       });
 
       deadlines.filter(function (fr) { return fr.vehicleId === f.id; }).forEach(function (fr) {
-        var d = alsDatum(fr.date);
+        var d = alsDatum_(fr.date);
         if (!d) return;
-        var tage = tageBis(d);
-        var stufe = stufeFuer(tage, vorwarnungFuer(fr));
+        var tage = tageBis_(d);
+        var stufe = stufeFuer_(tage, vorwarnungFuer_(fr));
         if (stufe === null) return;
         var schon = (fr.reported === '' || fr.reported === null) ? null : Number(fr.reported);
         if (schon !== null && schon <= stufe) return;
@@ -1481,17 +1545,26 @@ function taeglichePruefung() {
     });
 
     if (!faellig.length) return;
-    faellig.sort(function (a, b) { return a.tage - b.tage; });
-    sendeErinnerung(profil, faellig);
+    faellig.sort(function (a, b) { return dringlichkeit_(a) - dringlichkeit_(b); });
+
+    // Scheitert der Versand fuer ein Profil - etwa wegen einer vertippten
+    // Adresse -, sollen die uebrigen ihre Mail trotzdem bekommen. Frueher
+    // brach hier die ganze Schleife ab.
+    try {
+      sendeErinnerung_(profil, faellig);
+    } catch (e) {
+      console.error('Erinnerung an ' + profil.name + ' nicht versandt: ' + e.message);
+      return;
+    }
 
     // Erst nach erfolgreichem Versand vermerken – sonst faellt eine Meldung
     // aus, wenn der Mailversand scheitert.
     faellig.forEach(function (p) {
-      var bestand = lies(p.bestand);
+      var bestand = lies_(p.bestand);
       for (var i = 0; i < bestand.length; i++) {
         if (bestand[i].id === p.id) {
           bestand[i].reported = p.stufe;
-          schreibe(p.bestand, bestand[i]);
+          schreibe_(p.bestand, bestand[i]);
           break;
         }
       }
@@ -1499,21 +1572,57 @@ function taeglichePruefung() {
   });
 }
 
-function sendeErinnerung(profil, punkte) {
-  var ueberfaellig = punkte.filter(function (p) { return p.tage < 0; });
+/** Ab hier zaehlt der Kilometerstand statt des Datums. */
+var VORWARNUNG_KM = 1000;   // dieselbe Zahl steht in js/interval-status.js
+
+function hatKmRest_(p) {
+  return p.kmRest !== null && p.kmRest !== undefined;
+}
+
+function ueberfaellig_(p) {
+  return (p.tage !== null && p.tage < 0) || (hatKmRest_(p) && p.kmRest < 0);
+}
+
+/** Sortierschluessel: Ueberfaelliges zuerst, dann nach Resttagen. */
+function dringlichkeit_(p) {
+  if (ueberfaellig_(p)) return Math.min(p.tage === null ? 0 : p.tage, 0) - 100000;
+  return p.tage === null ? 0 : p.tage;
+}
+
+/** Nutzereingaben fuer die Mail - sie wird als HTML verschickt. */
+function maskiere_(text) {
+  return String(text === null || text === undefined ? '' : text).replace(/[&<>"']/g, function (z) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[z];
+  });
+}
+
+/** "in 12 Tagen", "noch 800 km" - im Betreff ohne Auszeichnung. */
+function wannText_(p, alsHtml) {
+  var rot = function (t) { return alsHtml ? '<b style="color:#9E332A">' + t + '</b>' : t; };
+  var kmText = hatKmRest_(p)
+    ? new Intl.NumberFormat('de-DE').format(Math.abs(Math.round(p.kmRest))) + ' km'
+    : '';
+  if (p.tage !== null && p.tage < 0) return rot(Math.abs(p.tage) + ' Tage überfällig');
+  if (hatKmRest_(p) && p.kmRest < 0) return rot(kmText + ' überzogen');
+  if (hatKmRest_(p) && p.kmRest <= VORWARNUNG_KM) {
+    return 'noch ' + kmText + (p.tage !== null ? ' / ' + p.tage + ' Tage' : '');
+  }
+  return 'in ' + p.tage + ' Tagen';
+}
+
+function sendeErinnerung_(profil, punkte) {
+  var ueberfaellig = punkte.filter(ueberfaellig_);
   var betreff = ueberfaellig.length
     ? 'Fuhrpark: ' + ueberfaellig.length + ' überfällig'
-    : 'Fuhrpark: ' + punkte[0].kind + ' in ' + punkte[0].tage + ' Tagen';
+    : 'Fuhrpark: ' + punkte[0].kind + ' – ' + wannText_(punkte[0], false);
 
   var zeilen = punkte.map(function (p) {
-    var wann = p.tage < 0
-      ? '<b style="color:#9E332A">' + Math.abs(p.tage) + ' Tage überfällig</b>'
-      : 'in ' + p.tage + ' Tagen';
-    var datum = p.datum ? Utilities.formatDate(p.datum, zeitzone(), 'dd.MM.yyyy') : '';
+    var wann = wannText_(p, true);
+    var datum = p.datum ? Utilities.formatDate(p.datum, zeitzone_(), 'dd.MM.yyyy') : '';
     return '<tr>' +
       '<td style="padding:8px 12px 8px 0;border-bottom:1px solid #D6D6CC">' +
-        '<b>' + p.kind + '</b><br><span style="color:#7A7A70;font-size:13px">' +
-        (p.fahrzeug.name || p.fahrzeug.plate || '') + '</span></td>' +
+        '<b>' + maskiere_(p.kind) + '</b><br><span style="color:#7A7A70;font-size:13px">' +
+        maskiere_(p.fahrzeug.name || p.fahrzeug.plate || '') + '</span></td>' +
       '<td style="padding:8px 0;border-bottom:1px solid #D6D6CC;text-align:right">' +
         wann + '<br><span style="color:#7A7A70;font-size:13px">' + datum + '</span></td>' +
       '</tr>';
@@ -1522,7 +1631,7 @@ function sendeErinnerung(profil, punkte) {
   var html =
     '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;color:#22221D">' +
     '<p style="font-size:17px;margin:0 0 4px"><b>Fuhrpark</b></p>' +
-    '<p style="color:#7A7A70;margin:0 0 18px">Hallo ' + profil.name + ', das steht an:</p>' +
+    '<p style="color:#7A7A70;margin:0 0 18px">Hallo ' + maskiere_(profil.name) + ', das steht an:</p>' +
     '<table style="width:100%;border-collapse:collapse;font-size:15px">' + zeilen + '</table>' +
     '<p style="color:#7A7A70;font-size:13px;margin:20px 0 0">' +
     'Diese Nachricht kommt einmal je Termin und Dringlichkeitsstufe, nicht täglich.</p>' +
@@ -1533,6 +1642,7 @@ function sendeErinnerung(profil, punkte) {
 
 /** Einmal im Skripteditor ausfuehren, um den taeglichen Auftrag anzulegen. */
 function richteErinnerungEin() {
+  nurImEditor_();
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'taeglichePruefung') ScriptApp.deleteTrigger(t);
   });
@@ -1559,9 +1669,10 @@ function richteErinnerungEin() {
  */
 
 function ersteEinrichtung() {
-  var ss = mappe();
-  Object.keys(TABELLEN).forEach(function (name) { blatt(name); });
-  var ordner = belegOrdner();
+  nurImEditor_();
+  var ss = mappe_();
+  Object.keys(TABELLEN).forEach(function (name) { blatt_(name); });
+  var ordner = belegOrdner_();
   return [
     'Fertig.',
     'Tabelle: ' + ss.getUrl(),
@@ -1578,10 +1689,11 @@ function ersteEinrichtung() {
  * rolle: "verwalter" sieht alle Fahrzeuge, alles andere nur die eigenen.
  */
 function legeProfilAn(name, email, passwort, rolle) {
+  nurImEditor_();
   if (!name || !passwort) throw new Error('Name und Passwort sind noetig.');
   if (String(passwort).length < 8) throw new Error('Bitte mindestens 8 Zeichen.');
 
-  var vorhanden = lies('profile').filter(function (p) {
+  var vorhanden = lies_('profile').filter(function (p) {
     return String(p.name).toLowerCase() === String(name).toLowerCase();
   });
   if (vorhanden.length) throw new Error('Ein Profil mit diesem Namen gibt es schon.');
@@ -1589,35 +1701,36 @@ function legeProfilAn(name, email, passwort, rolle) {
   var salt = Utilities.getUuid();
   // Farben aus der Gestaltungspalette, damit die Profilbilder zum Rest passen.
   var farben = ['#EC663E', '#4F7A4A', '#2F73BE', '#D8A01F', '#B23B1C', '#2E7D5B'];
-  var anzahl = lies('profile').length;
+  var anzahl = lies_('profile').length;
 
   var profil = {
-    id: neueId(),
+    id: neueId_(),
     name: name,
     farbe: farben[anzahl % farben.length],
     email: email || '',
     salt: salt,
-    hash: hashe(String(passwort), salt, HASH_RUNDEN),
+    hash: hashe_(String(passwort), salt, HASH_RUNDEN),
     runden: HASH_RUNDEN,
     hashArt: 'bytes',
     rolle: rolle || 'nutzer',
     angelegt: new Date().toISOString()
   };
-  schreibe('profile', profil);
+  schreibe_('profile', profil);
   return 'Profil "' + name + '" angelegt' + (email ? ' (Erinnerungen an ' + email + ')' : '') + '.';
 }
 
 /** Setzt ein Passwort neu. Es gibt keine "Passwort vergessen"-Mail. */
 function setzePasswort(name, neuesPasswort) {
+  nurImEditor_();
   if (String(neuesPasswort || '').length < 8) throw new Error('Bitte mindestens 8 Zeichen.');
-  var profile = lies('profile');
+  var profile = lies_('profile');
   for (var i = 0; i < profile.length; i++) {
     if (String(profile[i].name).toLowerCase() === String(name).toLowerCase()) {
       profile[i].salt = Utilities.getUuid();
       profile[i].runden = HASH_RUNDEN;
       profile[i].hashArt = 'bytes';
-      profile[i].hash = hashe(String(neuesPasswort), profile[i].salt, HASH_RUNDEN);
-      schreibe('profile', profile[i]);
+      profile[i].hash = hashe_(String(neuesPasswort), profile[i].salt, HASH_RUNDEN);
+      schreibe_('profile', profile[i]);
       meldeAlleAb();
       return 'Passwort für "' + profile[i].name + '" geändert. Alle Anmeldungen wurden beendet.';
     }
@@ -1626,11 +1739,12 @@ function setzePasswort(name, neuesPasswort) {
 }
 
 function setzeEmail(name, email) {
-  var profile = lies('profile');
+  nurImEditor_();
+  var profile = lies_('profile');
   for (var i = 0; i < profile.length; i++) {
     if (String(profile[i].name).toLowerCase() === String(name).toLowerCase()) {
       profile[i].email = email || '';
-      schreibe('profile', profile[i]);
+      schreibe_('profile', profile[i]);
       return 'Erinnerungen für "' + profile[i].name + '" gehen an ' + (email || '(niemanden)') + '.';
     }
   }
@@ -1642,26 +1756,27 @@ function setzeEmail(name, email) {
  * machen – deshalb muss der Name genau stimmen.
  */
 function loescheProfil(name) {
-  var profile = lies('profile');
+  nurImEditor_();
+  var profile = lies_('profile');
   var treffer = null;
   for (var i = 0; i < profile.length; i++) {
     if (profile[i].name === name) { treffer = profile[i]; break; }
   }
   if (!treffer) throw new Error('Kein Profil mit genau diesem Namen.');
 
-  var fahrzeuge = lies('vehicles').filter(function (f) { return f.profilId === treffer.id; });
+  var fahrzeuge = lies_('vehicles').filter(function (f) { return f.profilId === treffer.id; });
   fahrzeuge.forEach(function (f) {
     AM_FAHRZEUG.forEach(function (bestand) {
-      lies(bestand).forEach(function (z) {
+      lies_(bestand).forEach(function (z) {
         if (z.vehicleId === f.id) {
-          if (bestand === 'docs' && z.driveId) loescheDatei(z.driveId);
-          entferne(bestand, z.id);
+          if (bestand === 'docs' && z.driveId) loescheDatei_(z.driveId);
+          entferne_(bestand, z.id);
         }
       });
     });
-    entferne('vehicles', f.id);
+    entferne_('vehicles', f.id);
   });
-  entferne('profile', treffer.id);
+  entferne_('profile', treffer.id);
   return 'Profil "' + name + '" und ' + fahrzeuge.length + ' Fahrzeug(e) gelöscht.';
 }
 
@@ -1669,14 +1784,15 @@ function loescheProfil(name) {
 /**
  * Beendet alle Anmeldungen - wirklich alle.
  *
- * Frueher loeschte das nur die Skripteigenschaften. profilAusToken() sieht
+ * Frueher loeschte das nur die Skripteigenschaften. profilAusToken_() sieht
  * aber ZUERST im Cache nach, und der haelt sechs Stunden: Nach einem
  * Passwortwechsel blieb jede laufende Sitzung gueltig, obwohl diese Funktion
  * das Gegenteil meldete. Jetzt werden die Schluessel eingesammelt und aus
  * beiden Ablagen entfernt.
  */
 function meldeAlleAb() {
-  var props = eigenschaften();
+  nurImEditor_();
+  var props = eigenschaften_();
   var alle = props.getProperties();
   var schluessel = [];
   Object.keys(alle).forEach(function (k) {
@@ -1692,14 +1808,16 @@ function meldeAlleAb() {
 }
 
 function setzeGeminiSchluessel(schluessel) {
+  nurImEditor_();
   if (!schluessel) throw new Error('Kein Schluessel angegeben.');
-  eigenschaften().setProperty('GEMINI_KEY', String(schluessel).trim());
+  eigenschaften_().setProperty('GEMINI_KEY', String(schluessel).trim());
   return 'Gemini-Schlüssel hinterlegt. Er steht nur hier, nie im Browser.';
 }
 
 function setzeClaudeSchluessel(schluessel) {
+  nurImEditor_();
   if (!schluessel) throw new Error('Kein Schluessel angegeben.');
-  eigenschaften().setProperty('CLAUDE_KEY', String(schluessel).trim());
+  eigenschaften_().setProperty('CLAUDE_KEY', String(schluessel).trim());
   return 'Claude-Schlüssel hinterlegt. Er steht nur hier, nie im Browser.';
 }
 
@@ -1708,14 +1826,15 @@ function setzeClaudeSchluessel(schluessel) {
  * 'auto' heisst: Gemini zuerst, Claude als Ausweg.
  */
 function setzeErkennung(welche) {
+  nurImEditor_();
   var w = String(welche || '').trim().toLowerCase();
   if (['claude', 'gemini', 'auto'].indexOf(w) < 0) {
     throw new Error('Erlaubt sind "claude", "gemini" oder "auto".');
   }
-  var props = eigenschaften();
+  var props = eigenschaften_();
   if (w === 'auto') props.deleteProperty('ERKENNUNG');
   else props.setProperty('ERKENNUNG', w);
-  var stand = erkennungStand();
+  var stand = erkennungStand_();
   return stand.aktiv
     ? ('Belege liest jetzt: ' + stand.aktiv +
        (stand.zweit ? ' (Ausweg: ' + stand.zweit + ')' : ''))
@@ -1724,7 +1843,8 @@ function setzeErkennung(welche) {
 
 /** Ein anderes Claude-Modell, falls das voreingestellte nicht passt. */
 function setzeClaudeModell(modell) {
-  eigenschaften().setProperty('CLAUDE_MODELL', String(modell || '').trim());
+  nurImEditor_();
+  eigenschaften_().setProperty('CLAUDE_MODELL', String(modell || '').trim());
   return 'Claude-Modell: ' + (modell || 'Voreinstellung');
 }
 
@@ -1742,22 +1862,23 @@ function setzeClaudeModell(modell) {
  * kommst du dort noch heran.
  */
 function leereTestdaten(bestaetigung) {
+  nurImEditor_();
   if (bestaetigung !== 'JA ALLES LOESCHEN') {
     throw new Error('Zum Bestaetigen: leereTestdaten("JA ALLES LOESCHEN")');
   }
   var gezaehlt = [];
   Object.keys(TABELLEN).forEach(function (name) {
     if (name === 'profile') return;
-    var b = blatt(name);
+    var b = blatt_(name);
     var zeilen = b.getLastRow() - 1;
     if (zeilen > 0) b.deleteRows(2, zeilen);
     if (zeilen > 0) gezaehlt.push(name + ': ' + zeilen);
   });
 
   var belege = 0;
-  var dateien = belegOrdner().getFiles();
+  var dateien = belegOrdner_().getFiles();
   while (dateien.hasNext()) { dateien.next().setTrashed(true); belege++; }
-  var ordner = belegOrdner().getFolders();
+  var ordner = belegOrdner_().getFolders();
   while (ordner.hasNext()) {
     var f = ordner.next();
     var drin = f.getFiles();
@@ -1765,7 +1886,7 @@ function leereTestdaten(bestaetigung) {
     f.setTrashed(true);
   }
   // Die gemerkten Fahrzeugordner zeigen jetzt ins Leere.
-  var props = eigenschaften();
+  var props = eigenschaften_();
   Object.keys(props.getProperties()).forEach(function (k) {
     if (k.indexOf('ORDNER_F_') === 0) props.deleteProperty(k);
   });
@@ -1785,7 +1906,8 @@ function leereTestdaten(bestaetigung) {
  * Begruendung im Protokoll - das ist deutlich mehr als "antwortet nicht".
  */
 function pruefeGemini() {
-  var schluessel = eigenschaften().getProperty('GEMINI_KEY');
+  nurImEditor_();
+  var schluessel = eigenschaften_().getProperty('GEMINI_KEY');
   if (!schluessel) return console.log('Kein GEMINI_KEY hinterlegt.');
 
   console.log('Schluessel gefunden, ' + schluessel.length + ' Zeichen, beginnt mit "' +
@@ -1820,7 +1942,7 @@ function pruefeGemini() {
   console.log('Schluessel gueltig. ' + alle.length + ' Modelle erreichbar, davon ' +
               taugliche.length + ' fuer die Belegerkennung geeignet.');
 
-  var eingestellt = geminiModelle();
+  var eingestellt = geminiModelle_();
   console.log('');
   console.log('Die App fragt der Reihe nach:');
   eingestellt.forEach(function (m) {
@@ -1840,14 +1962,15 @@ function pruefeGemini() {
 
 /** Zeigt den Zustand der Einrichtung, ohne Geheimnisse preiszugeben. */
 function zeigeEinrichtung() {
-  var props = eigenschaften();
-  var profile = lies('profile');
+  nurImEditor_();
+  var props = eigenschaften_();
+  var profile = lies_('profile');
   var zeilen = [
     'Tabelle:        ' + (props.getProperty('TABELLE_ID') ? 'angelegt' : 'fehlt'),
     'Belegordner:    ' + (props.getProperty('ORDNER_ID') ? 'angelegt' : 'fehlt'),
     'Claude:         ' + (props.getProperty('CLAUDE_KEY') ? 'hinterlegt' : 'nicht hinterlegt'),
     'Gemini:         ' + (props.getProperty('GEMINI_KEY') ? 'hinterlegt' : 'nicht hinterlegt'),
-    'Belege liest:   ' + (erkennungStand().aktiv || 'niemand'),
+    'Belege liest:   ' + (erkennungStand_().aktiv || 'niemand'),
     'Profile:        ' + profile.length
   ];
   profile.forEach(function (p) {

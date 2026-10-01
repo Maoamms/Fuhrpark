@@ -29,7 +29,13 @@ const eur = n => new Intl.NumberFormat('de-DE', { style: 'currency', currency: '
 const km = n => (n == null || n === '') ? '–' : new Intl.NumberFormat('de-DE').format(n) + ' km';
 const parseD = s => s ? new Date(s + 'T12:00:00') : null;
 const fmtD = s => { const d = parseD(s); return d ? String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear() : '–'; };
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// Ortszeit, nicht UTC: toISOString() lieferte zwischen Mitternacht und
+// 1 bzw. 2 Uhr deutscher Zeit noch den Vortag.
+const todayISO = () => {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-'
+    + String(d.getDate()).padStart(2, '0');
+};
 function addMonths(d, m) {
   const x = new Date(d.getTime());
   const day = x.getDate();
@@ -494,7 +500,7 @@ const forVeh = arr => curVeh === 'all' ? arr : arr.filter(x => x.vehicleId === c
    Mailauftrag auf dem Server – sie steht bewusst an beiden Stellen als
    feste Vorgabe, damit Ansicht und Mail nicht auseinanderlaufen koennen. */
 const VORWARNUNG_STANDARD = 30;
-const VORWARNUNG_KM = 1000;
+const VORWARNUNG_KM = 1000;   // ebenso in Code.gs (Erinnerungsmail)
 
 /** Vorwarnzeit einer Erinnerung in Tagen. */
 function vorwarnung(satz) {
@@ -1016,7 +1022,7 @@ async function analysiereMitGemini(dateien, onStatus) {
 /* ---------------- document analysis (local, regelbasiert) ---------------- */
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
 function loadScript(src) {
   return new Promise((res, rej) => {
     if ([...document.scripts].some(s => s.src === src)) return res();
@@ -1035,7 +1041,9 @@ function loadScript(src) {
 async function ladePdf(puffer) {
   await loadScript(PDFJS);
   pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
-  return pdfjsLib.getDocument({ data: puffer }).promise;
+  // isEvalSupported: false schliesst CVE-2024-4367 - in pdf.js 3.x konnte
+  // ein praepariertes PDF sonst beim Anzeigen eigenes JavaScript ausfuehren.
+  return pdfjsLib.getDocument({ data: puffer, isEvalSupported: false }).promise;
 }
 
 async function pdfPageImage(pdf, n) {
