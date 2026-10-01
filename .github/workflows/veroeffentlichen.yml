@@ -1,0 +1,62 @@
+# Veroeffentlicht die App automatisch in Google Apps Script.
+#
+# Laeuft bei jedem Push auf main, der Code.gs, app.html, styles.html oder
+# appsscript.json aendert - oder von Hand unter "Actions -> Veroeffentlichen
+# -> Run workflow". Laedt die Dateien mit clasp ins Apps-Script-Projekt und
+# aktualisiert die BESTEHENDE Bereitstellung: Die Adresse der App bleibt.
+#
+# Benoetigte Secrets (Settings -> Secrets and variables -> Actions):
+#   CLASPRC_JSON          Inhalt von ~/.clasprc.json nach "clasp login"
+#   APPS_SCRIPT_ID        Skript-ID (Projekteinstellungen im Skripteditor)
+#   APPS_SCRIPT_DEPLOYMENT  Bereitstellungs-ID der Web-App
+# Die IDs stehen bewusst nicht im Repo: Es ist oeffentlich, und die
+# Bereitstellungs-ID ist zugleich die Adresse der App.
+
+name: Veroeffentlichen
+
+on:
+  push:
+    branches: [main]
+    paths: [Code.gs, app.html, styles.html, appsscript.json]
+  workflow_dispatch:
+
+# Nie zwei Veroeffentlichungen gleichzeitig.
+concurrency: apps-script
+
+jobs:
+  veroeffentlichen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: clasp installieren
+        run: npm install -g @google/clasp@2.4.2
+
+      - name: Zugang einrichten
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          APPS_SCRIPT_ID: ${{ secrets.APPS_SCRIPT_ID }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ] || [ -z "$APPS_SCRIPT_ID" ]; then
+            echo "::error::Secrets CLASPRC_JSON und APPS_SCRIPT_ID fehlen."
+            exit 1
+          fi
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+          printf '{"scriptId":"%s","rootDir":"."}' "$APPS_SCRIPT_ID" > .clasp.json
+
+      - name: Syntax pruefen
+        run: node -e "new Function(require('fs').readFileSync('Code.gs','utf8'))"
+
+      - name: Dateien hochladen
+        run: clasp push --force
+
+      - name: Bereitstellung aktualisieren
+        env:
+          APPS_SCRIPT_DEPLOYMENT: ${{ secrets.APPS_SCRIPT_DEPLOYMENT }}
+        run: |
+          clasp deploy --deploymentId "$APPS_SCRIPT_DEPLOYMENT" \
+            --description "GitHub ${GITHUB_SHA::7}"

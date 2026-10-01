@@ -1,0 +1,6 @@
+# Nur diese Dateien gehoeren ins Apps-Script-Projekt.
+**/**
+!Code.gs
+!app.html
+!styles.html
+!appsscript.json
