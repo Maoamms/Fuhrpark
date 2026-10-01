@@ -1,4 +1,4 @@
-<script>window.__fpStand = "01.10.2026 Rückmeldung beim Tippen";</script>
+<script>window.__fpStand = "01.10.2026 Handy-Ansicht";</script>
 <script>
 (function () {
 'use strict';
@@ -776,6 +776,40 @@ function table(cols) {
   wrap.append(t);
   return { wrap, t, tBody };
 }
+/**
+ * Schreibt an jede Tabellenzelle, zu welcher Spalte sie gehoert.
+ *
+ * Auf dem Handy werden Tabellen zu Karten (styles: "Tabellen werden zu
+ * Karten"); dort fehlt die Kopfzeile, also muss jede Zelle ihre
+ * Bezeichnung selbst tragen. Die erste benannte Textspalte wird zur
+ * Ueberschrift der Karte.
+ */
+function beschrifteTabellen(wurzel) {
+  (wurzel || document).querySelectorAll('.tblwrap table').forEach(t => {
+    const koepfe = [...t.querySelectorAll('thead th')].map(th => th.textContent.trim());
+    t.querySelectorAll('tbody tr').forEach(tr => {
+      let titel = false;
+      [...tr.children].forEach((zelle, i) => {
+        const name = koepfe[i] || '';
+        if (zelle.dataset.label !== name) zelle.dataset.label = name;
+        if (!titel && name && !zelle.classList.contains('num')) {
+          zelle.classList.add('tz');
+          titel = true;
+        }
+      });
+    });
+  });
+}
+// Tabellen entstehen in vielen Ansichten und Dialogen - statt jede Stelle
+// einzeln anzupassen, wird nach jeder Aenderung am Inhalt nachgezogen.
+(() => {
+  let geplant = false;
+  new MutationObserver(() => {
+    if (geplant) return;
+    geplant = true;
+    requestAnimationFrame(() => { geplant = false; beschrifteTabellen(); });
+  }).observe(document.body, { childList: true, subtree: true });
+})();
 const td = (txt, cls) => el('td', { class: cls || '' }, txt);
 const tdEl = (node) => { const d = el('td'); d.append(node); return d; };
 

@@ -1211,4 +1211,74 @@ button:not(:disabled):active,.btn:not(:disabled):active,
   .laeuft::after{animation:none;border-right-color:currentColor;opacity:.5}
   button:active,.btn:active,.lite:active,.iconbtn:active{transform:none}
 }
+
+/* ---------------- Handy: stapeln statt quetschen ----------------
+   Viele Zeilen waren fuer den Schreibtisch gebaut: Datum, Titel, Betrag
+   und Knopf nebeneinander. Auf 360-390 px blieb fuer den Titel eine
+   Spalte von 80 px - in der Ablage verschwand er ganz, in der Historie
+   lag der Betrag ueber der Beschreibung. Unter 600 px stehen die Teile
+   deshalb untereinander: oben das Wichtigste, darunter die Handlung. */
+
+/* Eine Ablagezeile kann auch zwei Knoepfe haben ("Erneut mit KI
+   auslesen" und "Bearbeiten") - dafuer braucht das Raster eine Spalte mehr. */
+.dok-zeile{grid-template-columns:minmax(120px,190px) minmax(0,1fr) auto auto}
+/* Bearbeiten steht immer in der letzten Spalte - auch ohne KI-Knopf davor. */
+.dok-zeile>.iconbtn:last-child{grid-column:4}
+
+@media (max-width:600px){
+  /* Kopfleiste: Suche in eigener Zeile, die zwei Knoepfe gleich breit. */
+  .kopfleiste{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .suchfeld{grid-column:1/-1;min-width:0;padding:9px 14px}
+  .knopf-still,.knopf-voll{justify-content:center;padding:10px 12px;min-height:44px}
+
+  /* Ablage: Art klein oben, Titel volle Breite, Knoepfe darunter. */
+  .dok-zeile{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:12px 16px}
+  .dok-art{flex:1 1 100%;font-size:.72rem}
+  .dok-titel{flex:1 1 100%;min-height:0;padding:2px 0}
+  .dok-name{white-space:normal;line-height:1.35}
+  .dok-leer{flex:1 1 auto}
+  .dok-zeile>.iconbtn{flex:0 0 auto;margin-top:4px}
+  .dok-zeile>.iconbtn:last-child{margin-left:auto}
+
+  /* Wartungshistorie: Datum und Betrag oben, Beschreibung darunter in
+     voller Breite. Bearbeiten geht ueber das Antippen der Zeile - die
+     Ansicht dahinter hat den Knopf. */
+  .vz{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;padding:13px 16px}
+  .vz-datum{grid-column:1;grid-row:1}
+  .vz-rechts{grid-column:2;grid-row:1;justify-self:end}
+  .vz-mitte{grid-column:1/-1;grid-row:2}
+  .vz-titel{line-height:1.4}
+  .vz-akt{display:none}
+
+  /* Faelligkeiten am Fahrzeug: Name in voller Breite statt "Zahnr...". */
+  .faellig{grid-template-columns:minmax(0,1fr) auto;gap:8px 10px}
+  .ff-name{grid-column:1/-1;grid-row:1}
+  .faellig .nm{white-space:normal;overflow:visible}
+  .ff-werte{grid-column:1/-1;grid-row:2;justify-content:flex-start}
+  .faellig>.pill{grid-column:1;grid-row:3;justify-self:start}
+  .ff-akt{grid-column:2;grid-row:3}
+
+  /* Tabellen werden zu Karten: je Zeile ein Block, je Wert eine Zeile
+     "Bezeichnung - Wert". Seitlich wischen ist auf dem Handy umstaendlich,
+     und die Spalten waren ohnehin zu schmal. Die Bezeichnungen setzt
+     beschrifteTabellen() aus den Spaltenkoepfen. */
+  .tblwrap::after{display:none}
+  .tblwrap table{min-width:0}
+  .tblwrap thead{display:none}
+  .tblwrap tr{display:block;padding:11px 16px;border-top:1px solid #EFE8DC}
+  .tblwrap tbody tr:first-child{border-top:0}
+  .tblwrap td{display:flex;justify-content:space-between;align-items:center;
+    gap:12px;padding:3px 0;border:0;text-align:right;min-height:0}
+  .tblwrap td::before{content:attr(data-label);font-family:var(--mono);
+    font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--grau);text-align:left;flex:none;font-weight:400}
+  .tblwrap td[data-label=""]::before{display:none}
+  .tblwrap td[data-label=""]{justify-content:flex-start}
+  .tblwrap td.tz{font-weight:600;font-size:.95rem;justify-content:flex-start;
+    text-align:left;padding-bottom:5px}
+  .tblwrap td.tz::before{display:none}
+  /* Symbolspalte und Ueberschrift nebeneinander statt je eine Zeile. */
+  .tblwrap td[data-label=""]:first-child,.tblwrap td.tz{display:inline-flex;vertical-align:middle}
+  .tblwrap td[data-label=""]:first-child{margin-right:10px}
+}
 </style>
