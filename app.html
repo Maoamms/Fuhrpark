@@ -1,4 +1,4 @@
-<script>window.__fpStand = "01.10.2026 Fahrzeugwahl Handy";</script>
+<script>window.__fpStand = "01.10.2026 Prüfung vor Testphase";</script>
 <script>
 (function () {
 'use strict';
@@ -2045,6 +2045,14 @@ function erledigtModal(art, satz) {
       km: data.km, cost: data.cost, shop: data.shop, docId
     });
 
+    // Ein hoeherer km-Stand gehoert auch ans Fahrzeug - sonst rechnen die
+    // Kilometertermine mit dem alten Stand und wirken weniger dringend.
+    const fz = vehById(satz.vehicleId);
+    if (data.km !== '' && data.km != null && (!fz || fz.km === '' || fz.km == null || +data.km > +fz.km)) {
+      await put('kmlog', { id: uid(), vehicleId: satz.vehicleId, date: data.date, km: +data.km,
+        note: 'Erledigt: ' + (satz.kind || 'Aufgabe') });
+    }
+
     if (art === 'intervals') {
       const neu = {
         ...satz, lastDate: data.date,
@@ -2056,6 +2064,11 @@ function erledigtModal(art, satz) {
       // trotzdem wieder im selben Monat wie zuvor.
       if (satz.dueDate && satz.intervalMonths) {
         neu.dueDate = plusMonate(satz.dueDate, +satz.intervalMonths);
+        await put('intervals', neu);
+      } else if (satz.dueDate && !satz.intervalMonths && satz.intervalKm) {
+        // Fester Termin mit Abstand nur in Kilometern: Er kehrt nach km
+        // wieder. Frueher wurde er hier geloescht wie ein einmaliger.
+        neu.dueDate = '';
         await put('intervals', neu);
       } else if (satz.dueDate && !satz.intervalMonths) {
         // Einmaliger Termin: Er kehrt nicht wieder. Frueher blieb er mit
@@ -2321,8 +2334,12 @@ function vehicleModal(v) {
     v ? el('div', { class: 'loeschzeile' },
       el('button', {
         class: 'btn ghost del',
+        // Der Text versprach frueher "Verknuepfte Eintraege bleiben erhalten" -
+        // der Server loescht aber alles, was am Fahrzeug haengt (loesche()).
         onclick: () => confirmDel('vehicles', e.id,
-          `Fahrzeug „${e.name}“ löschen? Verknüpfte Einträge bleiben erhalten.`)
+          `Fahrzeug „${e.name}“ endgültig löschen? Mit ihm werden alle Termine, `
+          + 'Einträge der Wartungshistorie, Kosten, Notizen, Reifen und Belege gelöscht. '
+          + 'Die Belege landen im Drive-Papierkorb.')
       }, 'Fahrzeug löschen')) : null
   ], async (data) => {
     const meldung = ersteMeldung([
@@ -3023,14 +3040,18 @@ function flotte(m) {
  */
 function aufgabenZeile(t, ueberfaellig) {
   const st = stufe(t);
-  const knopf = ueberfaellig
-    ? el('button', { class: 'auf-knopf', onclick: () => erledigtModal(t.art, t.satz) },
-      'Erledigt')
-    : el('button', { class: 'auf-knopf', onclick: () => bearbeiteTermin(t) }, 'Termin');
+  // "Erledigt" bei JEDER anstehenden Aufgabe, nicht nur bei ueberfaelligen:
+  // Wer den Oelwechsel eine Woche vor dem Termin macht, will ihn abhaken -
+  // bisher gab es dafuer hier nur "Termin" (bearbeiten). Bearbeiten geht
+  // jetzt ueber das Antippen des Titels.
+  const knopf = el('button', { class: 'auf-knopf', onclick: () => erledigtModal(t.art, t.satz) },
+    'Erledigt');
 
   return el('div', { class: 'auf-zeile' },
     el('span', { class: 'auf-punkt' + (st === 'later' ? ' spaet' : '') }),
-    el('div', { class: 'auf-mitte' },
+    el('div', { class: 'auf-mitte', role: 'button', tabindex: '0', title: 'Bearbeiten',
+      style: 'cursor:pointer', onclick: () => bearbeiteTermin(t),
+      onkeydown: e => { if (e.key === 'Enter') bearbeiteTermin(t); } },
       el('span', { class: 'auf-titel' }, t.kind || 'Termin'),
       el('span', { class: 'auf-meta' },
         (t.v ? t.v.name || t.v.plate : '') +
@@ -3535,7 +3556,11 @@ function itemCard(x) {
       el('span', { class: 'nm' }, x.iv.kind)),
     rows,
     el('div', { class: 'foot' }, el('span', { class: 'pill ' + x.st }, stLabel[x.st]),
-      (curVeh === 'all' && v) ? el('span', { class: 'veh', style: 'font-size:12px;color:var(--muted)' }, v.name) : el('span')));
+      (curVeh === 'all' && v) ? el('span', { class: 'veh', style: 'font-size:12px;color:var(--muted)' }, v.name) : el('span'),
+      // Abhaken direkt an der Kachel - die Kachel selbst oeffnet das
+      // Bearbeiten, deshalb darf der Klick hier nicht durchgereicht werden.
+      el('button', { class: 'iconbtn', style: 'margin-left:auto',
+        onclick: ev => { ev.stopPropagation(); erledigtModal('intervals', x.iv); } }, 'Erledigt')));
 }
 function restLabel(x) {
   const parts = [];
@@ -4049,6 +4074,7 @@ function faelligkeiten(v) {
       // Nur Bearbeiten. Das Loeschen liegt im Bearbeiten-Fenster – es ist der
       // seltenste Handgriff und muss nicht in jeder Zeile danebenstehen.
       el('div', { class: 'rowact ff-akt' },
+        el('button', { class: 'iconbtn', onclick: () => erledigtModal('intervals', iv) }, 'Erledigt'),
         el('button', { class: 'iconbtn', onclick: () => intervalModal(iv) }, 'Bearbeiten'))));
   });
   blk.append(el('div', { class: 'ff-legende' },

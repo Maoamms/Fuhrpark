@@ -72,7 +72,10 @@ var TABELLEN = {
   // sie, bleibt der Beleg trotzdem liegen und laesst sich spaeter erneut
   // auslesen. blatt_() haengt die neuen Spalten hinten an.
   docs:      ['id', 'vehicleId', 'category', 'title', 'date', 'name', 'mime',
-              'size', 'driveId', 'updatedAt', 'kiStatus', 'kiFehler', 'kiVersuche'],
+              'size', 'driveId', 'updatedAt', 'kiStatus', 'kiFehler', 'kiVersuche',
+              // Der Dokument-Dialog hatte immer ein Notizfeld - gespeichert
+              // wurde es nie, weil die Spalte fehlte.
+              'note'],
   fixcosts:  ['id', 'vehicleId', 'kind', 'amount', 'interval', 'date', 'note', 'updatedAt'],
   // docId: eine Notiz darf einen Beleg tragen – Foto vom Schaden, Angebot,
   // Schriftwechsel. blatt_() haengt die Spalte bei Bedarf hinten an.
@@ -459,6 +462,12 @@ function entpacke_(wert) {
 function entschaerfe_(wert) {
   if (typeof wert !== 'string') return wert;
   if (/^[=+\-@]/.test(wert)) return "'" + wert;
+  // Text, der wie eine Zahl aussieht, bleibt Text. Sheets wandelt sonst beim
+  // Schreiben: Die HSN "0603" wurde zu 603, die Versicherungsnummer "004711"
+  // zu 4711 - und eine Kennung aus lauter Ziffern zur Zahl, worauf sich der
+  // Eintrag nicht mehr oeffnen liess. Echte Zahlen (km, Kosten) schickt die
+  // App als Zahl, nicht als Text; sie sind davon nicht betroffen.
+  if (/^\s*(\d+([.,]\d*)?|[.,]\d+)(e[+-]?\d+)?\s*$/i.test(wert)) return "'" + wert;
   return wert;
 }
 
@@ -949,6 +958,11 @@ function aktualisiereKmAmFahrzeug_(vehicleId) {
   var fahrzeuge = lies_('vehicles');
   for (var i = 0; i < fahrzeuge.length; i++) {
     if (fahrzeuge[i].id === vehicleId) {
+      // Nur nachziehen, wenn der Verlauf mindestens so neu ist wie der Stand
+      // am Fahrzeug. Wer den Stand direkt am Fahrzeug eintraegt und spaeter
+      // einen aelteren Wert im Verlauf nachtraegt, bekam sonst den alten
+      // Wert ans Fahrzeug geschrieben.
+      if (fahrzeuge[i].kmDate && String(staende[0].date) < String(fahrzeuge[i].kmDate)) return;
       fahrzeuge[i].km = staende[0].km;
       fahrzeuge[i].kmDate = staende[0].date;
       schreibe_('vehicles', fahrzeuge[i]);
@@ -1735,77 +1749,84 @@ function taeglichePruefung() {
   var deadlines = lies_('deadlines');
   var kmlog = lies_('kmlog');
 
-  profile.forEach(function (profil) {
-    var meine = profil.rolle === 'verwalter' ? fahrzeuge
-      : fahrzeuge.filter(function (f) { return f.profilId === profil.id; });
-    if (!meine.length) return;
+  // Erst ALLE faelligen Termine bestimmen, dann verteilen, dann vermerken.
+  //
+  // Frueher lief das je Profil: Der Verwalter - er sieht alle Fahrzeuge -
+  // kam zuerst dran, bekam die Mail, und der Termin wurde als gemeldet
+  // vermerkt. Beim eigentlichen Besitzer stand er dann schon als gemeldet
+  // da: Er bekam nie eine Erinnerung fuer sein eigenes Fahrzeug.
+  var faellig = [];
+  fahrzeuge.forEach(function (f) {
+    var proTag = kmProTagFuer_(f.id, kmlog);
+    var jetztKm = aktuellerKm_(f, kmlog);
 
-    var faellig = [];
+    intervals.filter(function (iv) { return iv.vehicleId === f.id; }).forEach(function (iv) {
+      var n = naechsteFaelligkeit_(iv, proTag, jetztKm);
+      var vorwarn = vorwarnungFuer_(iv);
+      var stufe = n.tage === null ? null : stufeFuer_(n.tage, vorwarn);
 
-    meine.forEach(function (f) {
-      var proTag = kmProTagFuer_(f.id, kmlog);
-      var jetztKm = aktuellerKm_(f, kmlog);
-
-      intervals.filter(function (iv) { return iv.vehicleId === f.id; }).forEach(function (iv) {
-        var n = naechsteFaelligkeit_(iv, proTag, jetztKm);
-        var vorwarn = vorwarnungFuer_(iv);
-        var stufe = n.tage === null ? null : stufeFuer_(n.tage, vorwarn);
-
-        // Kilometertermine wie in der App: bald faellig ab VORWARNUNG_KM
-        // Rest, ueberfaellig unter null. Frueher zaehlten Kilometer hier nur,
-        // wenn sich aus zwei Kilometerstaenden eine Fahrleistung schaetzen
-        // liess - ohne diesen Verlauf kam fuer einen reinen Kilometertermin
-        // nie eine Mail, obwohl die App ihn laengst rot zeigte.
-        var kmRest = (n.km !== null && jetztKm > 0) ? n.km - jetztKm : null;
-        if (kmRest !== null && kmRest <= VORWARNUNG_KM) {
-          var kmStufe = kmRest < 0 ? 0 : stufeFuer_(vorwarn, vorwarn);
-          if (stufe === null || kmStufe < stufe) stufe = kmStufe;
-        }
-        if (stufe === null) return;
-        var schon = (iv.reported === '' || iv.reported === null) ? null : Number(iv.reported);
-        if (schon !== null && schon <= stufe) return;
-        faellig.push({ fahrzeug: f, kind: iv.kind, tage: n.tage, datum: n.datum,
-                       kmRest: kmRest, bestand: 'intervals', id: iv.id, stufe: stufe });
-      });
-
-      deadlines.filter(function (fr) { return fr.vehicleId === f.id; }).forEach(function (fr) {
-        var d = alsDatum_(fr.date);
-        if (!d) return;
-        var tage = tageBis_(d);
-        var stufe = stufeFuer_(tage, vorwarnungFuer_(fr));
-        if (stufe === null) return;
-        var schon = (fr.reported === '' || fr.reported === null) ? null : Number(fr.reported);
-        if (schon !== null && schon <= stufe) return;
-        faellig.push({ fahrzeug: f, kind: fr.kind, tage: tage, datum: d,
-                       bestand: 'deadlines', id: fr.id, stufe: stufe });
-      });
+      // Kilometertermine wie in der App: bald faellig ab VORWARNUNG_KM
+      // Rest, ueberfaellig unter null. Frueher zaehlten Kilometer hier nur,
+      // wenn sich aus zwei Kilometerstaenden eine Fahrleistung schaetzen
+      // liess - ohne diesen Verlauf kam fuer einen reinen Kilometertermin
+      // nie eine Mail, obwohl die App ihn laengst rot zeigte.
+      var kmRest = (n.km !== null && jetztKm > 0) ? n.km - jetztKm : null;
+      if (kmRest !== null && kmRest <= VORWARNUNG_KM) {
+        var kmStufe = kmRest < 0 ? 0 : stufeFuer_(vorwarn, vorwarn);
+        if (stufe === null || kmStufe < stufe) stufe = kmStufe;
+      }
+      if (stufe === null) return;
+      var schon = (iv.reported === '' || iv.reported === null) ? null : Number(iv.reported);
+      if (schon !== null && schon <= stufe) return;
+      faellig.push({ fahrzeug: f, kind: iv.kind, tage: n.tage, datum: n.datum,
+                     kmRest: kmRest, bestand: 'intervals', id: iv.id, stufe: stufe });
     });
 
-    if (!faellig.length) return;
-    faellig.sort(function (a, b) { return dringlichkeit_(a) - dringlichkeit_(b); });
+    deadlines.filter(function (fr) { return fr.vehicleId === f.id; }).forEach(function (fr) {
+      var d = alsDatum_(fr.date);
+      if (!d) return;
+      var tage = tageBis_(d);
+      var stufe = stufeFuer_(tage, vorwarnungFuer_(fr));
+      if (stufe === null) return;
+      var schon = (fr.reported === '' || fr.reported === null) ? null : Number(fr.reported);
+      if (schon !== null && schon <= stufe) return;
+      faellig.push({ fahrzeug: f, kind: fr.kind, tage: tage, datum: d,
+                     bestand: 'deadlines', id: fr.id, stufe: stufe });
+    });
+  });
+  if (!faellig.length) return;
+  faellig.sort(function (a, b) { return dringlichkeit_(a) - dringlichkeit_(b); });
 
+  // Jeder bekommt, was zu seinen Fahrzeugen gehoert - der Verwalter alles.
+  var versandt = {};
+  profile.forEach(function (profil) {
+    var seine = faellig.filter(function (p) {
+      return profil.rolle === 'verwalter' || p.fahrzeug.profilId === profil.id;
+    });
+    if (!seine.length) return;
     // Scheitert der Versand fuer ein Profil - etwa wegen einer vertippten
-    // Adresse -, sollen die uebrigen ihre Mail trotzdem bekommen. Frueher
-    // brach hier die ganze Schleife ab.
+    // Adresse -, sollen die uebrigen ihre Mail trotzdem bekommen.
     try {
-      sendeErinnerung_(profil, faellig);
+      sendeErinnerung_(profil, seine);
+      seine.forEach(function (p) { versandt[p.bestand + '|' + p.id] = p; });
     } catch (e) {
       console.error('Erinnerung an ' + profil.name + ' nicht versandt: ' + e.message);
-      return;
     }
+  });
 
-    // Erst nach erfolgreichem Versand vermerken – sonst faellt eine Meldung
-    // aus, wenn der Mailversand scheitert.
-    faellig.forEach(function (p) {
-      var bestand = lies_(p.bestand);
-      for (var i = 0; i < bestand.length; i++) {
-        if (bestand[i].id === p.id) {
-          bestand[i].reported = p.stufe;
-          schreibe_(p.bestand, bestand[i]);
-          break;
-        }
+  // Erst nach dem Versand vermerken - und nur, was bei mindestens einem
+  // Empfaenger angekommen ist. Sonst fiele eine Meldung aus, wenn der
+  // Mailversand scheitert.
+  Object.keys(versandt).forEach(function (k) {
+    var p = versandt[k];
+    var bestand = lies_(p.bestand);
+    for (var i = 0; i < bestand.length; i++) {
+      if (bestand[i].id === p.id) {
+        bestand[i].reported = p.stufe;
+        schreibe_(p.bestand, bestand[i]);
+        break;
       }
-    });
+    }
   });
 }
 
