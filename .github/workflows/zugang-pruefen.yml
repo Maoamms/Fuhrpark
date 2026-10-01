@@ -1,0 +1,63 @@
+# Prueft die Einrichtung fuer die automatische Veroeffentlichung - NUR LESEND.
+#
+# Meldet sich mit CLASPRC_JSON an, laedt das Projekt ueber APPS_SCRIPT_ID
+# herunter (ohne etwas hochzuladen) und sucht APPS_SCRIPT_DEPLOYMENT unter
+# den Bereitstellungen. An der laufenden App aendert sich nichts.
+# Secrets erscheinen im Protokoll nur als ***.
+
+name: Zugang pruefen
+
+on:
+  push:
+    branches: [sicherheit-und-korrekturen]
+    paths: [.github/workflows/zugang-pruefen.yml]
+  workflow_dispatch:
+
+jobs:
+  pruefen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: clasp installieren
+        run: npm install -g @google/clasp@2.4.2
+
+      - name: Secrets vorhanden?
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          APPS_SCRIPT_ID: ${{ secrets.APPS_SCRIPT_ID }}
+          APPS_SCRIPT_DEPLOYMENT: ${{ secrets.APPS_SCRIPT_DEPLOYMENT }}
+        run: |
+          fehlt=0
+          [ -n "$CLASPRC_JSON" ] && echo "CLASPRC_JSON: vorhanden" || { echo "::error::CLASPRC_JSON fehlt"; fehlt=1; }
+          [ -n "$APPS_SCRIPT_ID" ] && echo "APPS_SCRIPT_ID: vorhanden" || { echo "::error::APPS_SCRIPT_ID fehlt"; fehlt=1; }
+          [ -n "$APPS_SCRIPT_DEPLOYMENT" ] && echo "APPS_SCRIPT_DEPLOYMENT: vorhanden" || { echo "::error::APPS_SCRIPT_DEPLOYMENT fehlt"; fehlt=1; }
+          echo "$CLASPRC_JSON" | node -e "JSON.parse(require('fs').readFileSync(0,'utf8')); console.log('CLASPRC_JSON: gueltiges JSON')" \
+            || { echo "::error::CLASPRC_JSON ist kein gueltiges JSON - unvollstaendig kopiert?"; fehlt=1; }
+          exit $fehlt
+
+      - name: Anmelden und Projekt lesen
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          APPS_SCRIPT_ID: ${{ secrets.APPS_SCRIPT_ID }}
+        run: |
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+          mkdir -p /tmp/projekt && cd /tmp/projekt
+          printf '{"scriptId":"%s","rootDir":"."}' "$APPS_SCRIPT_ID" > .clasp.json
+          clasp pull
+          echo "--- Dateien im Apps-Script-Projekt:"
+          ls -la
+          echo "--- appsscript.json:"
+          cat appsscript.json
+
+      - name: Bereitstellung finden
+        env:
+          APPS_SCRIPT_DEPLOYMENT: ${{ secrets.APPS_SCRIPT_DEPLOYMENT }}
+        run: |
+          cd /tmp/projekt
+          clasp deployments | tee /tmp/liste.txt
+          grep -q -- "$APPS_SCRIPT_DEPLOYMENT" /tmp/liste.txt \
+            && echo "Bereitstellung gefunden." \
+            || { echo "::error::APPS_SCRIPT_DEPLOYMENT steht nicht unter den Bereitstellungen dieses Projekts."; exit 1; }
