@@ -1050,11 +1050,17 @@ tr.anklickbar:focus-visible{outline:2px solid var(--tinte);outline-offset:-2px}
      jeder Rand, den man nicht verschenkt. */
   body{padding:0}
   .app{grid-template-columns:1fr;border-radius:0;min-height:100vh;max-width:none}
-  .side{position:sticky;top:0;z-index:20;height:auto;flex-direction:row;
+  /* overflow:visible - am Desktop darf die Seitenleiste scrollen, hier
+     wuerde das die aufgeklappte Fahrzeugliste an ihrer Unterkante
+     abschneiden: Sie sah aus, als laege sie hinter der Kopfleiste. */
+  .side{position:sticky;top:0;z-index:20;height:auto;flex-direction:row;overflow:visible;
     align-items:center;flex-wrap:wrap;gap:12px;padding:12px 16px;
     border-right:0;border-bottom:1px solid var(--linie)}
   .side-top{flex-direction:row;align-items:center;gap:12px;flex:1;min-width:0}
   .side-top .plate-wahl{flex:1;min-width:0;max-width:230px;margin:0}
+  /* Die Liste darf breiter sein als das Kennzeichenfeld - sonst wird aus
+     "VW Golf Variant" ein "VW Gol...". */
+  .side-top .plate-liste{right:auto;width:max-content;max-width:calc(100vw - 32px);min-width:100%}
   .brand-name{display:none}
   .side-foot{flex-direction:row;align-items:center;gap:8px;margin:0 0 0 auto}
   .storagebox{border:0;padding:0;background:transparent}
