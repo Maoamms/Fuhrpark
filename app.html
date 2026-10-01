@@ -1,11 +1,9 @@
 <script>window.__fpStand = "01.10.2026 09:35";</script>
 <script>
-/* Erzeugt von gas/bauen.py – NICHT von Hand aendern.
-   Gearbeitet wird in js/, danach "py gas/bauen.py" ausfuehren. */
 (function () {
 'use strict';
 
-/* ===== js/helpers.js ===== */
+/* ===== helpers ===== */
 const $ = (s, r = document) => r.querySelector(s);
 const el = (t, a = {}, ...c) => {
   const e = document.createElement(t);
@@ -150,7 +148,7 @@ const GRENZE = {
   notiz: 5000
 };
 
-/* ===== js/icons.js ===== */
+/* ===== icons ===== */
 /**
  * Gezeichnete Symbole.
  *
@@ -268,11 +266,11 @@ function iconMit(name, text, groesse = 18) {
   return s;
 }
 
-/* ===== js/render-bus.js ===== */
+/* ===== render-bus ===== */
 /**
- * Zwei Handgriffe, die von ueberall ausgeloest werden, aber in app.js wohnen:
+ * Zwei Handgriffe, die von ueberall ausgeloest werden, aber im Abschnitt app wohnen:
  * neu zeichnen und abmelden. Ueber diese Haken statt ueber Einfuhren – sonst
- * muessten die Ansichten app.js laden, das sie selbst laedt.
+ * muessten die Ansichten den Abschnitt app laden, das sie selbst laedt.
  */
 
 let renderFn = () => {};
@@ -283,7 +281,7 @@ let abmeldenFn = () => {};
 function setAbmelden(fn) { abmeldenFn = fn; }
 function triggerAbmelden() { return abmeldenFn(); }
 
-/* ===== js/rpc.js ===== */
+/* ===== rpc ===== */
 /**
  * Verbindung zum Apps-Script-Server.
  *
@@ -334,7 +332,7 @@ function istAbgemeldet(fehler) {
   return /nicht angemeldet|abgelaufen|profil gibt es nicht/i.test(fehler.message || '');
 }
 
-/* ===== js/db.js ===== */
+/* ===== db ===== */
 /**
  * Datenzugriff.
  *
@@ -446,13 +444,13 @@ async function del(s, id) {
 
 /**
  * Der Gemini-Schluessel liegt beim Apps-Script-Betrieb auf dem Server und
- * nicht mehr im Browser. Diese beiden bleiben nur, damit settings.js
+ * nicht mehr im Browser. Diese beiden bleiben nur, damit der Abschnitt views/settings
  * unveraendert weiterlaeuft.
  */
 const metaGet = async () => null;
 const metaSet = async () => {};
 
-/* ===== js/state.js ===== */
+/* ===== state ===== */
 let S = {
   vehicles: [], intervals: [], events: [], docs: [], fixcosts: [], notes: [],
   kmlog: [], deadlines: [], tyres: [], shops: []
@@ -486,15 +484,15 @@ function aktualisiere() {
   Object.keys(S).forEach(s => { S[s] = (daten[s] || []).slice(); });
 }
 
-// aktuellesProfil() aus db.js wird direkt benutzt. Eine Weiterreichung
+// aktuellesProfil() aus dem Abschnitt db wird direkt benutzt. Eine Weiterreichung
 // "profil" stand hier einmal, rief niemand auf – und sie kollidierte im
-// Gebauten mit der Variablen "profil" in db.js. Dort sind alle Module eine
+// Ganzen mit der Variablen "profil" im Abschnitt db. Hier sind alle Abschnitte eine
 // Ebene, und zwei Deklarationen desselben Namens sind ein SyntaxError:
-// Die ganze App laeuft dann nicht mehr an. bauen.py prueft das jetzt.
+// Die ganze App laeuft dann nicht mehr an - doppelte Namen also vermeiden.
 const vehById = id => S.vehicles.find(v => v.id === id);
 const forVeh = arr => curVeh === 'all' ? arr : arr.filter(x => x.vehicleId === curVeh);
 
-/* ===== js/interval-status.js ===== */
+/* ===== interval-status ===== */
 /* Wie lange vorher eine Erinnerung als "bald faellig" gilt, wenn an ihr
    nichts anderes eingestellt ist. Dieselbe Zahl benutzt der taegliche
    Mailauftrag auf dem Server – sie steht bewusst an beiden Stellen als
@@ -574,7 +572,7 @@ function kindIcon(k, groesse) {
   return icon(kindName(k), groesse || 18);
 }
 
-/* ===== js/wartungsvorlagen.js ===== */
+/* ===== wartungsvorlagen ===== */
 /* Uebliche Wartungsintervalle als Startpunkt.
 
    Wichtig: Das sind Richtwerte, keine Vorschrift. Verbindlich ist immer der
@@ -694,7 +692,7 @@ function passtZuFahrzeug(vorlage, fahrzeug) {
   return true;
 }
 
-/* ===== js/modal.js ===== */
+/* ===== modal ===== */
 /* ---------------- shared page/table helpers ---------------- */
 /**
  * Kopfzeile eines Bereichs. "art" waehlt die Knopfstufe: ohne Angabe der
@@ -855,7 +853,7 @@ function confirmDel(store, id, msg) {
   $('#overlay').classList.add('show');
 }
 
-/* ===== js/storage.js ===== */
+/* ===== storage ===== */
 /**
  * Belege.
  *
@@ -864,7 +862,7 @@ function confirmDel(store, id, msg) {
  * Datei mehr vor.
  *
  * Nach aussen bleibt datei() dieselbe Funktion wie bisher, damit
- * views/documents.js unveraendert weiterlaeuft.
+ * Abschnitt views/documents unveraendert weiterlaeuft.
  */
 
 
@@ -935,7 +933,7 @@ function verkleinereBild(file, maxKante = 1600) {
   });
 }
 
-/* ===== js/gemini.js ===== */
+/* ===== gemini ===== */
 /**
  * Belegerkennung.
  *
@@ -980,7 +978,7 @@ async function stand() {
   return gemerkterStand;
 }
 
-// Bleiben nur, damit views/settings.js unveraendert laeuft.
+// Bleiben nur, damit Abschnitt views/settings unveraendert laeuft.
 const schluesselLesen = async () => null;
 const schluesselSetzen = async () => {
   throw new Error('Der Schlüssel wird im Skripteditor hinterlegt: setzeClaudeSchluessel("…")');
@@ -1018,7 +1016,7 @@ async function analysiereMitGemini(dateien, onStatus) {
   return erkannt || {};
 }
 
-/* ===== js/document-analysis.js ===== */
+/* ===== document-analysis ===== */
 /* ---------------- document analysis (local, regelbasiert) ---------------- */
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -1175,7 +1173,7 @@ function attachAnalyzer(fileField, getFile, opts) {
   });
 }
 
-/* ===== js/pdf-bauen.js ===== */
+/* ===== pdf-bauen ===== */
 /**
  * Mehrere Seiten zu einem PDF zusammensetzen.
  *
@@ -1386,7 +1384,7 @@ async function seitenZeichnen(dateien, optionen) {
   return raus;
 }
 
-/* ===== js/seiten-feld.js ===== */
+/* ===== seiten-feld ===== */
 /**
  * Ein Feld zum Sammeln von Seiten – fotografieren oder Dateien waehlen.
  *
@@ -1498,7 +1496,7 @@ function seitenFeld(optionen = {}) {
   };
 }
 
-/* ===== js/auth.js ===== */
+/* ===== auth ===== */
 /**
  * Anmeldung am Apps-Script-Server.
  *
@@ -1562,7 +1560,7 @@ async function initAuth() {
   }
 }
 
-/* ===== js/views/login.js ===== */
+/* ===== views/login ===== */
 /**
  * Anmeldung in zwei Schritten: Profil waehlen, Passwort eingeben.
  *
@@ -1677,8 +1675,8 @@ function renderLogin(onDone) {
   }
 }
 
-/* ===== js/views/intervals.js ===== */
-/* Dialog fuer eine Erinnerung. Die Darstellung liegt in views/vehicle.js.
+/* ===== views/intervals ===== */
+/* Dialog fuer eine Erinnerung. Die Darstellung liegt in Abschnitt views/vehicle.
 
    Zwei Dinge lassen sich hier einstellen, die vorher festverdrahtet waren:
 
@@ -1792,7 +1790,7 @@ function intervalModal(iv) {
   });
 }
 
-/* ===== js/views/aufgaben.js ===== */
+/* ===== views/aufgaben ===== */
 /* =====================================================================
    Aufgaben abhaken und anlegen
 
@@ -1986,9 +1984,9 @@ function aufgabeAnlegen() {
   ], async () => {}, { nurSchliessen: true });
 }
 
-/* ===== js/views/notes.js ===== */
+/* ===== views/notes ===== */
 /**
- * Dialog fuer eine Notiz. Die Darstellung liegt in views/vehicle.js.
+ * Dialog fuer eine Notiz. Die Darstellung liegt in Abschnitt views/vehicle.
  *
  * Eine Notiz kann einen Beleg tragen: das Foto vom Kratzer, das Angebot,
  * der Zettel von der Werkstatt. Ohne Bild ist eine Notiz oft die Haelfte
@@ -2047,10 +2045,10 @@ function noteModal(n) {
   });
 }
 
-/* ===== js/views/fixcosts.js ===== */
+/* ===== views/fixcosts ===== */
 const yearlyAmount = fc => (+fc.amount || 0) * (fc.interval === 'monatlich' ? 12 : 1);
 
-// Dialog fuer einen laufenden Posten. Die Darstellung liegt in views/costs.js.
+// Dialog fuer einen laufenden Posten. Die Darstellung liegt in Abschnitt views/costs.
 function fixcostModal(fc) {
   const e = fc || { id: uid(), vehicleId: curVeh !== 'all' ? curVeh : S.vehicles[0]?.id, interval: 'jährlich' };
   modal(fc ? 'Laufende Kosten bearbeiten' : 'Laufende Kosten hinzufügen', [
@@ -2085,15 +2083,15 @@ function fixcostModal(fc) {
   });
 }
 
-/* ===== js/views/vehicles.js ===== */
-// Wird von views/vehicle.js gesetzt: oeffnet die Wartungsvorlage. Ueber diesen
-// Umweg statt eines direkten Imports, weil vehicle.js bereits diese Datei
+/* ===== views/vehicles ===== */
+// Wird von Abschnitt views/vehicle gesetzt: oeffnet die Wartungsvorlage. Ueber diesen
+// Umweg statt eines direkten Imports, weil der Abschnitt views/vehicle bereits diese Datei
 // einbindet und sich beide sonst gegenseitig laden wuerden.
 let vorlageOeffnen = null;
 function setVorlageOeffnen(fn) { vorlageOeffnen = fn; }
 
 // Dialog zum Anlegen und Bearbeiten eines Fahrzeugs. Die Darstellung liegt
-// in views/vehicle.js – hier wohnt nur noch das Formular.
+// in Abschnitt views/vehicle – hier wohnt nur noch das Formular.
 // Zwischenueberschrift im Formular – die Felder sonst als eine lange Liste
 // zu zeigen macht das Ausfuellen unuebersichtlich.
 const gruppe = (titel, hinweis) => el('div', { style: 'border-top:1px solid var(--line);padding-top:12px;margin-top:2px' },
@@ -2207,7 +2205,7 @@ function vehicleModal(v) {
   });
 }
 
-/* ===== js/views/documents.js ===== */
+/* ===== views/documents ===== */
 /* Die Papiere, die man wirklich sucht – und zwar meistens dann, wenn es eilt:
    bei einer Kontrolle, beim Verkauf, nach einem Unfall. Sie stehen deshalb
    oben und nicht irgendwo in einer nach Datum sortierten Liste. */
@@ -2468,7 +2466,7 @@ async function zeigePdf(blob, buehne) {
   }
 }
 
-/* ===== js/views/werkstaetten.js ===== */
+/* ===== views/werkstaetten ===== */
 /* =====================================================================
    Werkstätten
 
@@ -2606,7 +2604,7 @@ function werkstattKarte(w) {
       })) : null);
 }
 
-/* ===== js/views/suche.js ===== */
+/* ===== views/suche ===== */
 /**
  * Suche ueber alles – Fahrzeuge, Eintraege, Belege, Termine, Notizen.
  *
@@ -2713,7 +2711,7 @@ function suche(q) {
   return raus;
 }
 
-/* ===== js/views/dashboard.js ===== */
+/* ===== views/dashboard ===== */
 function vDash(m) {
   // Ohne Fahrzeug hat das Dashboard nichts zu zeigen – dann klar zum ersten
   // Schritt fuehren, statt leere Bereiche und "Kein TUEV erfasst" anzuzeigen.
@@ -3379,7 +3377,7 @@ function restLabel(x) {
 }
 const statPlain = (val, lbl) => el('div', { class: 'card stat' }, el('div', { class: 'k' }, lbl), el('div', { class: 'v', style: 'font-size:22px' }, val));
 
-/* ===== js/views/vehicle.js ===== */
+/* ===== views/vehicle ===== */
 /* Alles zu einem Fahrzeug auf einer Seite: Stammdaten, saemtliche
    Faelligkeiten und die Notizen. Ist oben "Alle Fahrzeuge" gewaehlt,
    erscheint stattdessen die Liste zum Auswaehlen und Anlegen. */
@@ -3987,7 +3985,7 @@ function notizen(v) {
   return blk;
 }
 
-/* ===== js/views/events.js ===== */
+/* ===== views/events ===== */
 /* Der Verlauf zeigt ausschliesslich, was tatsaechlich passiert ist.
    Faelligkeiten stehen bewusst nicht hier: Sie sind Vorhersagen aus einer
    Regel, keine Tatsachen mit Betrag und Beleg. Beides gemeinsam auf einer
@@ -4234,7 +4232,7 @@ function artKlasse(typ) {
   }[typ] || 'a-sonst';
 }
 
-/* ===== js/views/costs.js ===== */
+/* ===== views/costs ===== */
 /* Saemtliche Auswertungen an einem Ort: einmalige Werkstattkosten aus dem
    Verlauf und die laufenden Posten wie Versicherung oder Steuer. */
 function vKosten(m) {
@@ -4484,7 +4482,7 @@ function detailFeld(jahr, jahrEvents, alleEvents, werkstattJahr, laufendJahr) {
     fuss ? el('div', { class: 'det-summe' }, fuss) : null);
 }
 
-/* ===== js/views/settings.js ===== */
+/* ===== views/settings ===== */
 /**
  * Einstellungen.
  *
@@ -4663,7 +4661,7 @@ function exportieren() {
   setTimeout(() => { feld.focus(); feld.select(); }, 60);
 }
 
-/* ===== js/scan.js ===== */
+/* ===== scan ===== */
 /* Ein Beleg, ein Vorgang: Datei waehlen -> auslesen -> pruefen -> es entstehen
    in einem Rutsch Dokument, Ereignis, Wartungstermin und aktueller km-Stand. */
 
@@ -5119,7 +5117,7 @@ function monateZwischen(von, bis) {
   return m;
 }
 
-/* ===== js/app.js ===== */
+/* ===== app ===== */
 /* ---------------- Navigation ----------------
    Je Punkt zwei Beschriftungen: die ausgeschriebene fuer die Seitenleiste,
    eine kurze fuer die Leiste am unteren Rand des Handys. Dort stehen sechs

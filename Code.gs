@@ -7,11 +7,11 @@
  * Editor, bei dem etwas verrutschen kann. Genau daran ist eine ganze Nacht
  * gescheitert. Also: eine Datei, ein Einfuegen.
  *
- * Gearbeitet wird weiter in den vier Quelldateien unter gas/; diese hier
- * entsteht daraus mit  py gas/verschmelze.py
+ * Diese Datei ist die Quelle: Sie wird so, wie sie ist, in den
+ * Skripteditor uebertragen.
  */
 
-/* ================= aus Code.gs ================= */
+/* ================= Code ================= */
 
 /**
  * Fuhrpark – Serverteil (Google Apps Script)
@@ -918,7 +918,7 @@ function loescheDatei_(driveId) {
   catch (e) { /* schon weg */ }
 }
 
-/* ================= aus Dateien.gs ================= */
+/* ================= Dateien ================= */
 
 /**
  * Fuhrpark – Belege und Belegerkennung
@@ -1321,7 +1321,7 @@ function erkenneMitClaude_(daten) {
   return inhalt.input || {};
 }
 
-/* ================= aus Erinnerung.gs ================= */
+/* ================= Erinnerung ================= */
 
 /**
  * Fuhrpark – Erinnerungen per Mail
@@ -1342,7 +1342,7 @@ function erkenneMitClaude_(daten) {
 var STUFEN = [180, 90, 60, 30, 14, 7, 1, 0];
 
 // Vorwarnzeit, wenn am Termin nichts eingestellt ist. Dieselbe Zahl steht in
-// js/interval-status.js – Ansicht und Mail duerfen nicht auseinanderlaufen.
+// app.html (intStatus) – Ansicht und Mail duerfen nicht auseinanderlaufen.
 var VORWARNUNG_STANDARD = 30;
 
 function vorwarnungFuer_(satz) {
@@ -1573,7 +1573,7 @@ function taeglichePruefung() {
 }
 
 /** Ab hier zaehlt der Kilometerstand statt des Datums. */
-var VORWARNUNG_KM = 1000;   // dieselbe Zahl steht in js/interval-status.js
+var VORWARNUNG_KM = 1000;   // dieselbe Zahl steht in app.html (intStatus)
 
 function hatKmRest_(p) {
   return p.kmRest !== null && p.kmRest !== undefined;
@@ -1650,7 +1650,7 @@ function richteErinnerungEin() {
   return 'Tägliche Prüfung eingerichtet – läuft jeden Morgen gegen 7 Uhr.';
 }
 
-/* ================= aus Einrichtung.gs ================= */
+/* ================= Einrichtung ================= */
 
 /**
  * Fuhrpark – Einrichtung und Verwaltung
