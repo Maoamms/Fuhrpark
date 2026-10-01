@@ -174,6 +174,10 @@ function doGet() {
       '<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>',
       '<div class="toast" id="toast"></div>',
       '',
+      // Die Profilliste gleich mitliefern: Die Anmeldemaske braucht sie
+      // sofort, und ein eigener Serverbesuch dafuer kostet bei Apps Script
+      // ein bis zwei Sekunden. Sie kommt meist aus dem Zwischenspeicher.
+      profilSkript_(),
       '<!-- Selbstdiagnose.',
       '     Laeuft der Code darunter nicht an, sah man bisher nur dieses Geruest:',
       '     Seitenleiste, sonst nichts, keine Meldung. Diese beiden kleinen Skripte',
@@ -234,7 +238,22 @@ function doGet() {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-/** Bindet Teildateien in index.html ein: <?!= einbinden_('styles') ?> */
+/**
+ * Die oeffentliche Profilliste als Skriptzeile fuer die Seite. Scheitert das
+ * Lesen - etwa vor der Einrichtung -, fragt die Seite wie frueher selbst.
+ */
+function profilSkript_() {
+  try {
+    // "<" maskieren: Ein Name wie "</script>" darf das Skript nicht beenden.
+    return '<script>window.__fpProfile = ' +
+      JSON.stringify(profilListeRoh_()).replace(/</g, '\\u003c') + ';</script>';
+  } catch (e) {
+    console.warn('Profilliste fuer die Seite nicht lesbar: ' + e.message);
+    return '';
+  }
+}
+
+/** Bindet Teildateien in die Seite ein. */
 function einbinden_(datei) {
   return HtmlService.createHtmlOutputFromFile(datei).getContent();
 }
@@ -470,6 +489,7 @@ function schreibe_(name, datensatz) {
       return entschaerfe_(w === undefined || w === null ? '' : w);
     });
 
+    vergissProfilliste_(name);
     var ids = b.getRange(1, 1, Math.max(b.getLastRow(), 1), 1).getValues();
     for (var i = 1; i < ids.length; i++) {
       if (ids[i][0] === datensatz.id) {
@@ -491,6 +511,7 @@ function entferne_(name, id) {
   sperre.waitLock(30000);
   try {
     var b = blatt_(name);
+    vergissProfilliste_(name);
     var ids = b.getRange(1, 1, Math.max(b.getLastRow(), 1), 1).getValues();
     for (var i = 1; i < ids.length; i++) {
       if (ids[i][0] === id) { b.deleteRow(i + 1); vergiss_(name); return true; }
@@ -614,9 +635,30 @@ function gleichSicher_(a, b) {
  * nur Anzeigename und Farbe – niemals Salt oder Hashwert.
  */
 function profilListe() {
-  return lies_('profile').map(function (p) {
+  return profilListeRoh_();
+}
+
+/*
+ * Die Liste aendert sich fast nie, wird aber bei jedem Aufruf der Seite
+ * gebraucht. Deshalb liegt sie im Zwischenspeicher; schreibe_() und
+ * entferne_() verwerfen ihn, sobald sich am Blatt "profile" etwas aendert.
+ */
+var PROFILLISTE_CACHE = 'profilliste';
+
+function profilListeRoh_() {
+  var cache = CacheService.getScriptCache();
+  var roh = cache.get(PROFILLISTE_CACHE);
+  if (roh) { try { return JSON.parse(roh); } catch (e) {} }
+  var liste = lies_('profile').map(function (p) {
     return { id: p.id, name: p.name, farbe: p.farbe };
   });
+  cache.put(PROFILLISTE_CACHE, JSON.stringify(liste), 21600);
+  return liste;
+}
+
+function vergissProfilliste_(name) {
+  if (name !== 'profile') return;
+  try { CacheService.getScriptCache().remove(PROFILLISTE_CACHE); } catch (e) {}
 }
 
 /*
@@ -676,10 +718,17 @@ function anmelden(daten) {
     schreibe_('profile', p);
   }
   var token = Utilities.getUuid() + Utilities.getUuid();
-  var sitzung = JSON.stringify({ profilId: p.id, ablauf: Date.now() + SITZUNG_STUNDEN * 3600 * 1000 });
+  var profil = { id: p.id, name: p.name, farbe: p.farbe, rolle: p.rolle };
+  // Das Profil steht mit in der Sitzung. So muss nicht jeder spaetere Aufruf
+  // erst das Blatt "profile" lesen, nur um festzustellen, wer da fragt.
+  var sitzung = JSON.stringify({ profilId: p.id, profil: profil,
+                                 ablauf: Date.now() + SITZUNG_STUNDEN * 3600 * 1000 });
   CacheService.getScriptCache().put('sitzung_' + token, sitzung, 21600);
   eigenschaften_().setProperty('sitzung_' + token, sitzung);
-  return { token: token, profil: { id: p.id, name: p.name, farbe: p.farbe, rolle: p.rolle } };
+
+  // Der Bestand kommt gleich mit. Bisher holte die App ihn mit einem
+  // eigenen Aufruf - bei Apps Script ein bis zwei Sekunden extra.
+  return { token: token, profil: profil, daten: datenFuer_(profil) };
 }
 
 /**
@@ -711,6 +760,11 @@ function profilAusToken_(token) {
     eigenschaften_().deleteProperty('sitzung_' + token);
     throw new Error('Anmeldung abgelaufen.');
   }
+  // Neuere Sitzungen tragen das Profil selbst. Aendert sich eine Rolle oder
+  // wird ein Profil geloescht, beendet die Verwaltung alle Sitzungen
+  // (meldeAlleAb) - danach gilt wieder, was in der Tabelle steht.
+  if (s.profil && s.profil.id === s.profilId) return s.profil;
+
   var profile = lies_('profile');
   for (var i = 0; i < profile.length; i++) {
     if (profile[i].id === s.profilId) {
@@ -759,7 +813,11 @@ function raeumeSitzungenAuf_() {
  * und laesst sich vom Browser aus nicht setzen.
  */
 function holeAlles(daten) {
-  var profil = profilAusToken_(tokenAus_(daten));
+  return datenFuer_(profilAusToken_(tokenAus_(daten)));
+}
+
+/** Der Bestand eines Profils - fuer holeAlles() und direkt nach der Anmeldung. */
+function datenFuer_(profil) {
   var alle = lies_('vehicles');
   var meine = profil.rolle === 'verwalter' ? alle
     : alle.filter(function (f) { return f.profilId === profil.id; });
@@ -1898,6 +1956,11 @@ function legeProfilAn(name, email, passwort, rolle) {
   return 'Profil "' + name + '" angelegt' + (email ? ' (Erinnerungen an ' + email + ')' : '') + '.';
 }
 
+/*
+ * Rolle geaendert (direkt in der Tabelle)? Laufende Sitzungen kennen noch
+ * die alte - danach einmal meldeAlleAb() ausfuehren.
+ */
+
 /** Setzt ein Passwort neu. Es gibt keine "Passwort vergessen"-Mail. */
 function setzePasswort(name, neuesPasswort) {
   nurImEditor_();
@@ -1956,6 +2019,9 @@ function loescheProfil(name) {
     entferne_('vehicles', f.id);
   });
   entferne_('profile', treffer.id);
+  // Die Sitzungen tragen das Profil in sich - ohne diesen Schritt bliebe
+  // eine laufende Anmeldung des geloeschten Profils bis zum Ablauf gueltig.
+  meldeAlleAb();
   return 'Profil "' + name + '" und ' + fahrzeuge.length + ' Fahrzeug(e) gelöscht.';
 }
 

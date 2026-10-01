@@ -1,4 +1,4 @@
-<script>window.__fpStand = "01.10.2026 Belegscanner (Paket A+B)";</script>
+<script>window.__fpStand = "01.10.2026 Schnellere Anmeldung";</script>
 <script>
 (function () {
 'use strict';
@@ -291,16 +291,28 @@ function triggerAbmelden() { return abmeldenFn(); }
  * und Feldnamen-Uebersetzung ersatzlos.
  */
 
+/*
+ * Die Sitzung wird im Geraet gemerkt (localStorage), nicht nur im Tab.
+ *
+ * Frueher lag sie in sessionStorage: Tab zu, Anmeldung weg - obwohl der
+ * Server sie zwoelf Stunden gelten laesst. Jeder neue Aufruf der App hiess
+ * damit Profil waehlen, Passwort tippen, warten. Jetzt bleibt man bis zum
+ * Ablauf oder bis "abmelden" angemeldet. Laeuft die Sitzung ab, meldet der
+ * Server das, und die App zeigt wieder die Anmeldung.
+ */
 let token = null;
 function setToken(t) {
   token = t;
   try {
-    t ? sessionStorage.setItem('fp_token', t) : sessionStorage.removeItem('fp_token');
+    t ? localStorage.setItem('fp_token', t) : localStorage.removeItem('fp_token');
   } catch (e) { /* privater Modus – dann eben ohne */ }
+  try { sessionStorage.removeItem('fp_token'); } catch (e) {}
 }
 function getToken() {
   if (token) return token;
-  try { token = sessionStorage.getItem('fp_token'); } catch (e) { token = null; }
+  try { token = localStorage.getItem('fp_token'); } catch (e) { token = null; }
+  // Noch aus der Zeit, als der Schluessel nur im Tab lag.
+  if (!token) { try { token = sessionStorage.getItem('fp_token'); } catch (e) {} }
   return token;
 }
 
@@ -1557,14 +1569,26 @@ let currentUser = null;
 function setCurrentUser(p) { currentUser = p; }
 
 /** Liste der Profile fuer die Anmeldemaske – nur Namen und Farben. */
+/**
+ * Die Profilliste steckt schon in der Seite - doGet() legt sie hinein. Das
+ * spart beim Anmelden einen ganzen Serverbesuch. Nur wenn sie fehlt, etwa
+ * bei einer aelteren Bereitstellung, wird gefragt.
+ */
 async function profilListe() {
+  if (Array.isArray(window.__fpProfile)) return window.__fpProfile;
   return rufe('profilListe');
 }
+/**
+ * Meldet an. Der Server liefert den Bestand gleich mit - bisher folgte auf
+ * die Anmeldung ein eigener Aufruf nur fuer die Daten.
+ *
+ * @returns {Promise<object|null>} Der Bestand, falls mitgeliefert.
+ */
 async function signIn(profilId, passwort) {
   const antwort = await rufe('anmelden', { profilId, passwort });
   setToken(antwort.token);
   currentUser = antwort.profil;
-  return antwort.profil;
+  return antwort.daten || null;
 }
 async function signOut() {
   const alt = getToken();
@@ -1629,10 +1653,10 @@ function renderLogin(onDone) {
   const huelle = el('div', { class: 'login-wrap' }, karte);
   document.body.append(huelle);
 
-  function fertig() {
+  function fertig(daten) {
     huelle.remove();
     if (geruest) geruest.style.display = '';
-    onDone();
+    onDone(daten || undefined);
   }
 
   zeigeProfile();
@@ -1692,7 +1716,7 @@ function renderLogin(onDone) {
       knopf.disabled = true;
       knopf.textContent = 'Prüft …';
       signIn(p.id, feld.value)
-        .then(() => fertig())
+        .then(daten => fertig(daten))
         .catch(fehler => {
           knopf.disabled = false;
           knopf.textContent = 'Anmelden';
