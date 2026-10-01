@@ -1,4 +1,4 @@
-<script>window.__fpStand = "01.10.2026 Belegscanner (Paket A)";</script>
+<script>window.__fpStand = "01.10.2026 Belegscanner (Paket A+B)";</script>
 <script>
 (function () {
 'use strict';
@@ -882,6 +882,8 @@ async function datei(docId) {
 /* Dieselbe Grenze wie auf dem Server (MAX_BYTES). Hier vorab geprueft, damit
    statt einer unverstaendlichen Apps-Script-Meldung ein klarer Satz kommt. */
 const MAX_BELEG_BYTES = 25 * 1024 * 1024;
+// Dieselbe Grenze wie KI_MAX_BYTES auf dem Server.
+const KI_MAX_BYTES = 14 * 1024 * 1024;
 const ZU_GROSS = 'Das Dokument ist zu groß. Bitte weniger Seiten scannen oder die Scanqualität reduzieren.';
 
 /** Legt eine Datei ab und liefert den fertigen Dokumenteintrag. */
@@ -1003,8 +1005,17 @@ async function analysiereMitGemini(dateien, onStatus) {
   if (onStatus) onStatus('Beleg wird vorbereitet …');
 
   const seiten = [];
+  let gesamt = 0;
   for (const d of liste) {
     const klein = await verkleinereBild(d);
+    gesamt += klein.size;
+    // Vor dem Senden pruefen: Gemini nimmt eingebettete Dateien nur bis etwa
+    // 20 MB je Anfrage an, als Base64 um ein Drittel groesser. Ohne diese
+    // Pruefung kam eine unverstaendliche Fehlermeldung zurueck.
+    if (gesamt > KI_MAX_BYTES) {
+      throw new Error('Das Dokument ist für die automatische Auswertung zu groß (über '
+        + Math.round(KI_MAX_BYTES / 1024 / 1024) + ' MB).');
+    }
     seiten.push({ base64: await alsBase64(klein), mime: klein.type });
   }
 
@@ -1096,8 +1107,15 @@ async function analyzeFile(file, onStatus) {
       text += '\n' + tc.items.map(it => it.str).join(' ');
     }
     if (text.replace(/\s/g, '').length < 20) {
-      onStatus && onStatus('Kein Text im PDF – nutze OCR …');
-      text = await ocr(await pdfPageImage(pdf, 1), onStatus);
+      // Gescanntes PDF ohne Textebene: alle Seiten erkennen, nicht nur die
+      // erste - bei mehrseitigen Rechnungen steht die Summe meist am Ende.
+      // Dieselbe Obergrenze wie oben; jede Seite dauert einige Sekunden.
+      const bis = Math.min(pdf.numPages, 6);
+      text = '';
+      for (let i = 1; i <= bis; i++) {
+        onStatus && onStatus('Kein Text im PDF – Texterkennung Seite ' + i + ' von ' + bis + ' …');
+        text += '\n' + await ocr(await pdfPageImage(pdf, i));
+      }
     }
   } else if (file.type.startsWith('image/')) {
     text = await ocr(file, onStatus);
