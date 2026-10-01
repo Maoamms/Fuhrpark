@@ -51,6 +51,10 @@ jobs:
           ls -la
           echo "--- appsscript.json:"
           cat appsscript.json
+          # Als Hinweis ausgeben, damit es auch ohne Protokoll lesbar ist.
+          # Beides ist nicht geheim.
+          echo "::notice title=Dateien im Projekt::$(ls -1 | tr '\n' ' ')"
+          echo "::notice title=appsscript.json::$(node -e "process.stdout.write(JSON.stringify(require('/tmp/projekt/appsscript.json')))")"
 
       - name: Bereitstellung finden
         env:
