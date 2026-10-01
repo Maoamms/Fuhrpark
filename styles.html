@@ -1,0 +1,1185 @@
+<style>
+/* =========================================================
+   Fuhrpark – Gestaltungssystem
+
+   Dunkle Tinte auf weissem Papier. Getrennt wird ueber die Linie,
+   nicht ueber getoente Flaechen: 2 px durchgezogen fuer Kanten,
+   2 px gepunktet zwischen Listenzeilen. Ein Akzent, Orange.
+
+   Symbole sind gezeichnet (js/icons.js), nicht als Emoji gesetzt: Emoji
+   zeichnet das Betriebssystem, also saehe dasselbe Zeichen auf jedem Geraet
+   anders aus – meist bunt und weich, neben dieser Strichfuehrung fremd.
+
+   Ueberschriften in Alegreya Sans 800 mit enger Laufweite, Text in
+   Mulish. Kleine Beschriftungen laufen gesperrt und in Versalien –
+   sie ordnen, ohne Gewicht zu nehmen.
+   ========================================================= */
+:root{
+  /* Neutrale Flaechen – warmes Papier statt kaltem Weiss */
+  --leinwand:#E9E5DE;   /* Seite ausserhalb der Huelle */
+  --huelle:#F7F5F1;     /* die Huelle, in der alles sitzt */
+  --seitenleiste:#F2EFEA;
+  --papier:#FFFEFB;     /* Karten */
+  --band:#F4F1EA;       /* Fussbaender, ruhige Felder */
+  --sand:#F5ECDF;       /* Kostenkachel */
+  --lavendel:#E9E5F3;   /* Schnell erfassen */
+
+  --tinte:#3B352D;      /* Haupttext, gefuellte Knoepfe */
+  --tinte-2:#5F594F;    /* Nebentext */
+  --stark:#3F3930;
+  --meta:#6E6860;
+  --grau:#6B645A;       /* Beschriftungen */
+  --linie:#DCD2C1;      /* Kartenkante, 1,5 px */
+  --linie-band:#E4DCCD;
+  --linie-zeile:#E9E3D9;
+  --linie-feld:#E4DED4;
+  --papier-2:#F2EFEA;
+
+  /* Dringlichkeit – und nur sie. Nie das Fahrzeug, nie die Kategorie. */
+  --rot:#C2564F;    --rot-hell:#FBEEEC;  --rot-fest:#F6E0DC;  --rot-tief:#8F3A36;
+  --gelb-punkt:#D99A63; --gelb-hell:#F7EFE1; --gelb-fest:#F7E7D6; --gelb-tief:#7D4416;
+  --gruen:#8FA792;  --gruen-hell:#EEF1EC; --gruen-fest:#DFE6DD; --gruen-tief:#3A4C3F;
+
+  --orange:#8F3A36;     /* Akzentschrift, Verweise */
+  --orange-hell:var(--rot-hell);
+
+  --kopf:"Archivo",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --text:"Archivo",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"DM Mono",ui-monospace,"SF Mono",Consolas,monospace;
+
+  --r-s:10px; --r-m:14px; --r-l:22px; --r-xl:24px; --r-huelle:26px;
+
+  --kante:1.5px solid var(--linie);
+  --kante-ruhig:1px solid var(--linie-feld);
+  --punktiert:1px solid var(--linie-zeile);
+  --schatten:0 1px 3px rgba(59,53,45,.05);
+
+  /* Bruecke zu Namen, die in den Ansichten direkt stehen */
+  --muted:var(--meta); --ink:var(--tinte); --line:var(--linie);
+  --a500:var(--orange); --over:var(--rot-tief); --ok:var(--gruen-tief);
+  --n50:var(--band); --n500:var(--tinte-2); --n700:var(--stark);
+  --ampel-ok:var(--gruen); --ampel-soon:var(--gelb-punkt); --ampel-over:var(--rot);
+  --grund:var(--huelle);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--text);color:var(--tinte);background:var(--grund);
+  font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--orange);outline-offset:2px}
+
+h1,h2,h3{font-family:var(--kopf);font-weight:600;letter-spacing:-.02em;margin:0}
+h1{font-size:1.75rem;line-height:1.15}
+h2{font-size:1.06rem;line-height:1.2}
+h3{font-size:1.19rem;line-height:1.2}
+p{margin:0}
+
+/* Zahlen laufen ueberall tabellarisch: gleiche Ziffernbreite, damit Betraege
+   und Datumsangaben untereinander in einer Flucht stehen. */
+.zahl,.betrag,.fzk-datum,.rest,.tile .v,.stat .v,.chip .n{
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;
+}
+
+/* Kleine Beschriftung: gesperrt, Versalien, in DM Mono – ordnet ohne zu
+   draengen und setzt sich von der Archivo-Textschrift ab. */
+.eyebrow,.gesperrt,.tile .k,.stat .k,.block h2,.teile-t,.hero .eyebrow2,
+.st-art,.fzk-tuv .eyebrow2,.marke{
+  font-family:var(--mono);font-weight:400;font-size:.66rem;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--grau);
+}
+/* Die Zeile ueber der Hauptueberschrift traegt den Akzent – sie sagt, wo man
+   ist, und darf dafuer Farbe bekommen. */
+.eyebrow{color:var(--orange)}
+/* Abschnittsueberschriften stehen fuer sich. Der frueher davorgesetzte
+   Akzentstrich stammte aus der alten Bildsprache; die Vorlage gliedert ueber
+   Flaechen und Abstaende, nicht ueber zusaetzliche Striche. */
+.block h2{display:flex;align-items:center;gap:10px;
+  font-family:var(--kopf);font-weight:600;font-size:1.06rem;
+  letter-spacing:-.01em;text-transform:none;color:var(--tinte)}
+.mini,.st-sub,.leise{font-size:.82rem;color:var(--tinte-2)}
+
+/* Die ganze Anwendung sitzt als abgerundete Huelle auf der Leinwand – die
+   Seite selbst ist nicht die Flaeche, auf der gearbeitet wird. */
+body{background:var(--leinwand);padding:20px}
+.app{
+  display:grid;grid-template-columns:250px minmax(0,1fr);
+  max-width:1560px;margin:0 auto;background:var(--huelle);
+  border-radius:var(--r-huelle);overflow:hidden;min-height:calc(100vh - 40px);
+}
+
+/* ---------------- Seitenleiste ---------------- */
+.side{
+  background:var(--seitenleiste);border-right:0;
+  padding:22px 16px;display:flex;flex-direction:column;gap:26px;
+  position:sticky;top:20px;height:calc(100vh - 40px);overflow:auto;
+}
+.side-top{display:flex;flex-direction:column;gap:16px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand{padding:0 8px}
+.brand .mark{
+  width:36px;height:36px;border-radius:11px;background:var(--tinte);color:var(--huelle);
+  display:grid;place-items:center;font-family:var(--kopf);font-weight:600;
+  font-size:.75rem;letter-spacing:.04em;flex:none;
+}
+.brand-name{font-family:var(--kopf);font-weight:600;font-size:1.13rem;letter-spacing:-.01em}
+
+/* Kennzeichen als Fahrzeugwahl */
+/* Das Schild selbst – dieselbe Zeichnung wie auf den Fahrzeugkarten */
+.plate{
+  display:inline-flex;align-items:stretch;border:1.5px solid var(--tinte);
+  border-radius:5px;background:var(--papier);overflow:hidden;flex:none;
+}
+.plate-eu{background:#46557A;width:14px;display:flex;flex-direction:column;
+  align-items:center;justify-content:flex-end;padding:0 0 3px;flex:none}
+.plate-stars{display:none}
+.plate-d{color:#fff;font-family:var(--mono);font-size:8px;line-height:1}
+.plate-txt{padding:4px 9px;display:flex;align-items:center;
+  font-weight:600;font-size:.82rem;letter-spacing:.05em;white-space:nowrap}
+.plate.klein .plate-txt{padding:3px 7px;font-size:.75rem}
+.plate.leer{opacity:.5;margin:0 8px}
+
+/* Das aufklappbare Menue darum */
+.plate-wahl{position:relative;margin:0 8px}
+.plate-knopf{display:flex;align-items:center;gap:8px;width:100%;
+  border:0;background:transparent;padding:0;cursor:pointer;text-align:left}
+.plate-knopf .plate{flex:1;min-width:0}
+.plate-knopf .plate-txt{flex:1;overflow:hidden;text-overflow:ellipsis}
+.plate-pfeil{flex:none;display:flex;color:var(--meta);transition:transform .15s}
+.plate-wahl.offen .plate-pfeil{transform:rotate(180deg)}
+.plate-knopf:hover .plate{box-shadow:0 0 0 3px rgba(59,53,45,.10)}
+.plate-knopf:focus-visible{outline:none}
+.plate-knopf:focus-visible .plate{box-shadow:0 0 0 3px rgba(59,53,45,.22)}
+
+.plate-liste{display:none;position:absolute;left:0;right:0;top:calc(100% + 8px);
+  z-index:40;background:var(--papier);border:var(--kante);border-radius:16px;
+  box-shadow:0 12px 30px rgba(59,53,45,.18);padding:6px;max-height:60vh;overflow:auto}
+.plate-wahl.offen .plate-liste{display:block}
+.plate-eintrag{display:flex;align-items:center;gap:9px;width:100%;
+  border:0;background:transparent;border-radius:11px;padding:7px 8px;
+  cursor:pointer;text-align:left}
+.plate-eintrag:hover{background:var(--seitenleiste)}
+.plate-eintrag.an{background:var(--band)}
+/* Ein Versicherungskennzeichen oder ein langer Name darf die Liste nicht
+   breiter machen, als sie ist. */
+.plate-eintrag .plate{min-width:0;max-width:62%}
+.plate-eintrag .plate-txt{overflow:hidden;text-overflow:ellipsis}
+.plate-sub{font-size:.75rem;color:var(--meta);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+
+/* Navigation: der aktive Punkt wird gefuellt, die uebrigen tragen nichts */
+nav{display:flex;flex-direction:column;gap:3px;flex:1}
+.nav-gruppe{font-family:var(--mono);font-size:.66rem;letter-spacing:.14em;
+  color:var(--grau);padding:0 12px 9px}
+.nav-gruppe+.nav-gruppe,nav .nav-btn+.nav-gruppe{padding-top:24px}
+.nav-btn{
+  display:flex;align-items:center;gap:11px;padding:10px 13px;
+  border:0;background:transparent;color:#4B463F;
+  border-radius:13px;cursor:pointer;font-weight:400;font-size:.9rem;
+  text-align:left;width:100%;transition:background .12s;
+}
+.nav-btn .ic{flex:none;display:flex;align-items:center;justify-content:center;
+  color:#8D857A}
+.nav-btn:hover{background:var(--leinwand)}
+.nav-btn.active{background:var(--tinte);color:var(--huelle);font-weight:500}
+.nav-btn.active .ic{color:var(--huelle)}
+.nav-btn .kurz{display:none}
+
+/* ---------------- Gezeichnete Symbole ----------------
+   Sie erben die Textfarbe, damit sie auf gefuellten wie auf weissen
+   Flaechen ohne Nachfaerben stimmen. */
+.ic{display:inline-flex;align-items:center;justify-content:center;flex:none;color:inherit}
+.ic svg{display:block}
+svg{flex:none}
+.mit-ic{display:inline-flex;align-items:center;gap:7px}
+.btn svg,.lite svg,.iconbtn svg{vertical-align:-.15em}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px}
+.lite{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+
+.side-foot{display:flex;flex-direction:column;gap:9px;margin-top:auto}
+.storagebox{display:flex;flex-direction:column;gap:2px;padding:11px 13px;
+  background:var(--papier);border:1px solid var(--linie-feld);border-radius:16px}
+.profilbox{flex-direction:row;align-items:center;gap:11px}
+.profil-text{display:flex;flex-direction:column;min-width:0;gap:1px}
+.st-on{font-weight:500;font-size:.84rem;overflow:hidden;text-overflow:ellipsis}
+.st-sub{font-size:.78rem;color:var(--tinte-2);line-height:1.4}
+.st-ab{border:0;background:none;color:var(--tinte-2);font-size:.75rem;cursor:pointer;
+  margin-left:auto;text-decoration:underline;flex:none;padding:2px}
+.st-ab:hover{color:var(--tinte)}
+
+/* ---------------- Knoepfe ---------------- */
+.btn{
+  border:0;border-radius:14px;background:var(--tinte);color:var(--huelle);
+  font-family:var(--text);font-weight:500;font-size:.84rem;
+  padding:12px 18px;cursor:pointer;white-space:nowrap;
+}
+.btn:hover{background:#4D463C}
+.btn:disabled{background:#CFCABF;cursor:default}
+.btn.scan{width:100%;padding:14px}
+.btn.ghost{background:transparent;color:#4B463F;border:1px solid #DDD8D0}
+.btn.ghost:hover{background:var(--seitenleiste)}
+.btn.sm{font-size:.81rem;padding:8px 13px;border-radius:10px}
+.lite{
+  border:1px solid #DDD8D0;border-radius:14px;background:transparent;
+  color:#4B463F;padding:11px 16px;cursor:pointer;font-weight:400;
+  font-size:.84rem;width:100%;
+}
+.lite:hover{background:var(--seitenleiste)}
+.link{background:none;border:0;padding:0;color:var(--meta);
+  cursor:pointer;font-size:.81rem}
+.link:hover{color:var(--orange)}
+/* Der ruhige Knopf in Listenzeilen – dieselbe Form wie "Öffnen ›" auf der
+   Fahrzeugkarte, damit gleiche Handlungen gleich aussehen. */
+.iconbtn{border:0;background:#E8E3DA;border-radius:10px;
+  padding:8px 13px;cursor:pointer;font-size:.78rem;font-weight:500;color:var(--tinte)}
+.iconbtn:hover{background:#DED8CD}
+.iconbtn.del{background:transparent;border:1px solid #E0C3BD;color:var(--rot-tief)}
+.iconbtn.del:hover{background:var(--rot-fest)}
+.rowact{display:flex;gap:6px}
+.x{border:1px solid var(--linie-feld);background:var(--papier);border-radius:50%;
+  width:32px;height:32px;font-size:1.05rem;line-height:1;cursor:pointer;flex:none;
+  color:var(--meta)}
+.x:hover{background:var(--seitenleiste);color:var(--tinte)}
+
+/* ---------------- Fahrzeugkopf mit Farbband ----------------
+   Dieselbe Farbe wie auf der Karte im Dashboard – damit beim Hineinspringen
+   sofort klar ist, in welchem Auto man gelandet ist. */
+/* Dieselbe Sparsamkeit wie auf der Karte: eine farbige Kante links, sonst
+   weiss. Sie stellt die Verbindung zur Karte im Dashboard her, ohne dass der
+   halbe Bildschirm eingefaerbt ist. */
+.fz-kopfband{background:var(--papier);border:var(--kante);
+  border-radius:var(--r-xl);box-shadow:var(--schatten);
+  padding:20px 24px 18px;margin-bottom:10px}
+.fz-kopfband .head{margin-bottom:12px}
+.fz-merkmale{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.fz-modell{font-size:.84rem;color:var(--meta)}
+
+/* Der Kilometerstand ist ein Knopf, kein Text: er aendert sich staendig und
+   soll sich von hier aus eintragen lassen. */
+.km-knopf{display:inline-flex;align-items:center;gap:9px;
+  background:var(--band);border:1.5px solid var(--linie-band);border-radius:999px;
+  padding:7px 15px;cursor:pointer;color:var(--tinte);font-family:var(--text)}
+.km-knopf:hover{background:#ECE6DB}
+.km-knopf .ic{color:var(--meta)}
+.km-wert{font-weight:600;font-size:.94rem;font-variant-numeric:tabular-nums}
+.km-datum{font-size:.75rem;color:var(--meta)}
+
+.km-verlauf{margin-top:16px;padding-top:14px;border-top:1px solid var(--linie-zeile);
+  display:flex;flex-direction:column;gap:6px}
+.km-zeile{display:flex;align-items:baseline;gap:12px;font-size:.81rem}
+.km-zeile-datum{color:var(--meta);flex:none;font-variant-numeric:tabular-nums}
+.km-zeile-wert{font-weight:600;font-variant-numeric:tabular-nums;flex:none}
+.km-zeile-notiz{color:var(--meta);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------------- Stammdaten ----------------
+   Beschriftung klein und gesperrt ueber dem Wert. Nebeneinander in gleicher
+   Groesse musste man bei jeder Angabe neu suchen, wo das eine aufhoert. */
+.sd-karte{background:var(--papier);border:var(--kante);border-radius:var(--r-xl);
+  box-shadow:var(--schatten);overflow:hidden}
+.sd-kopf{font-family:var(--mono);font-size:.62rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--grau);padding:13px 20px;
+  background:var(--band);border-bottom:1.5px solid var(--linie-band)}
+/* Die Trennlinien entstehen als Fugen des Rasters, nicht als Rahmen der
+   Felder: Bei einem umbrechenden Raster weiss man nicht, welches Feld in der
+   ersten Zeile oder Spalte landet – gezeichnete Rahmen saehen dann je nach
+   Fensterbreite an anderer Stelle doppelt aus. */
+.sd-raster{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));
+  gap:1px;background:#EFE8DC}
+.sd-feld{display:flex;flex-direction:column;gap:3px;padding:13px 20px;
+  background:var(--papier);min-width:0}
+.sd-label{font-family:var(--mono);font-size:.6rem;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--grau)}
+.sd-wert{font-size:.97rem;font-weight:500;color:var(--stark);
+  font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.sd-notiz{padding:16px 20px;color:var(--tinte-2);white-space:pre-wrap;font-size:.9rem}
+
+/* Abschnittskopf mit Knöpfen rechts */
+.abschnitt-kopf{display:flex;align-items:center;justify-content:space-between;
+  gap:10px;flex-wrap:wrap}
+.abschnitt-kopf .knoepfe{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---------------- Reifen ----------------
+   Ein Satz je Karte. Der Streifen oben sagt, ob er noch taugt – Alter und
+   Profil koennen ihn beide erledigen. */
+.reifen-raster{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+  gap:12px}
+.reifen-karte{background:var(--papier);border:var(--kante);border-radius:var(--r-l);
+  box-shadow:var(--schatten);overflow:hidden;display:flex;flex-direction:column}
+.reifen-band{display:block;height:5px;background:var(--gruen);flex:none}
+.reifen-karte.soon .reifen-band{background:var(--gelb-punkt)}
+.reifen-karte.over .reifen-band{background:var(--rot)}
+.reifen-leib{display:flex;flex-direction:column;flex:1}
+.reifen-kopf{display:flex;align-items:flex-start;gap:10px;padding:14px 16px 12px}
+.reifen-titel{flex:1;min-width:0}
+.reifen-titel h3{font-size:1.06rem;font-weight:600;letter-spacing:-.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.reifen-sub{display:block;font-size:.78rem;color:var(--meta);margin-top:2px}
+.reifen-karte .sd-raster{border-top:1px solid #EFE8DC}
+.reifen-warnung{margin:0;padding:10px 16px;font-size:.81rem;font-weight:500;
+  border-top:1px solid #EFE8DC}
+.reifen-warnung.soon{background:var(--gelb-hell);color:var(--gelb-tief)}
+.reifen-warnung.over{background:var(--rot-hell);color:var(--rot-tief)}
+.reifen-notiz{padding:10px 16px;font-size:.81rem;color:var(--tinte-2);
+  border-top:1px solid #EFE8DC}
+.reifen-fuss{margin-top:auto;display:flex;align-items:center;gap:8px;
+  padding:11px 16px;background:var(--band);border-top:1.5px solid var(--linie-band)}
+.reifen-fuss .leise{font-size:.78rem}
+
+/* ---------------- Fahrzeugart ----------------
+   Das Zeichen steht ueberall dort, wo ein Fahrzeug genannt wird. Bei vier
+   Eintraegen in einer Liste erkennt man die Art schneller als den Namen. */
+.art-zeichen{display:inline-flex;align-items:center;justify-content:center;
+  flex:none;color:var(--meta)}
+.art-kreis{width:30px;height:30px;border-radius:50%;background:var(--band);
+  border:1px solid var(--linie-band)}
+.art-kreis.gross{width:38px;height:38px}
+
+/* ---------------- Dokumente ----------------
+   Nach Fahrzeug gruppiert, die wichtigen Papiere oben und in fester
+   Reihenfolge: So steht der Fahrzeugschein immer an derselben Stelle, statt
+   irgendwo in einer nach Datum sortierten Liste. */
+.dok-karte{background:var(--papier);border:var(--kante);border-radius:var(--r-xl);
+  box-shadow:var(--schatten);overflow:hidden}
+.dok-kopf{font-family:var(--mono);font-size:.62rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--grau);padding:13px 20px 11px;
+  background:var(--band);border-bottom:1.5px solid var(--linie-band)}
+.dok-kopf~.dok-kopf{border-top:1.5px solid var(--linie-band)}
+.dok-zeile{display:grid;grid-template-columns:minmax(120px,190px) minmax(0,1fr) auto;
+  gap:14px;align-items:center;padding:10px 20px;border-top:1px solid #F3EEE4}
+.dok-zeile.neu{border-top:1px solid #EFE8DC}
+.dok-zeile:first-child{border-top:0}
+.dok-art{font-size:.78rem;color:var(--meta);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.dok-titel{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left;
+  border:0;background:none;padding:0;cursor:pointer;font-family:var(--text);
+  color:var(--tinte)}
+.dok-titel:hover .dok-name{color:var(--orange);text-decoration:underline}
+.dok-name{font-size:.9rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.dok-meta{font-size:.75rem;color:var(--meta);font-variant-numeric:tabular-nums}
+.dok-zeile.fehlt{background:var(--huelle)}
+.dok-leer{font-size:.84rem;color:var(--meta);font-style:italic}
+.dok-fehlt{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:11px 20px;background:var(--band);border-top:1.5px solid var(--linie-band);
+  font-size:.81rem;color:var(--tinte-2)}
+.dok-fehlt .iconbtn{margin-left:auto}
+.abschnitt-kopf h2{display:flex;align-items:center;gap:9px}
+
+/* ---------------- Werkstätten ---------------- */
+.wst-raster{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.wst-karte{background:var(--papier);border:var(--kante);border-radius:var(--r-l);
+  box-shadow:var(--schatten);overflow:hidden;display:flex;flex-direction:column}
+.wst-kopf{display:flex;align-items:flex-start;gap:10px;padding:14px 16px 12px}
+.wst-titel{flex:1;min-width:0}
+.wst-titel h3{font-size:1.06rem;font-weight:600;letter-spacing:-.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wst-sub{display:block;font-size:.78rem;color:var(--meta);margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wst-karte .sd-raster{border-top:1px solid #EFE8DC}
+.wst-notiz{padding:11px 16px;font-size:.84rem;line-height:1.5;color:var(--tinte-2);
+  background:var(--gelb-hell);border-top:1px solid #EFE8DC;white-space:pre-wrap}
+.wst-besuche{border-top:1px solid #EFE8DC;display:flex;flex-direction:column}
+.wst-zeile{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;
+  align-items:baseline;padding:9px 16px;font-size:.81rem;border-top:1px solid #F3EEE4}
+.wst-zeile:first-child{border-top:0}
+.wst-datum{color:var(--meta);font-variant-numeric:tabular-nums;white-space:nowrap}
+.wst-was{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wst-betrag{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* ---------------- Kostenkacheln zum Aufklappen ---------------- */
+.summen{display:flex;flex-direction:column;gap:14px}
+.kachel-auf{position:relative;text-align:left;cursor:pointer;font-family:var(--text);
+  align-items:stretch}
+.kachel-auf:hover{box-shadow:0 4px 12px rgba(59,53,45,.10)}
+.kachel-pfeil{position:absolute;right:14px;top:14px;color:var(--meta);
+  display:flex;transition:transform .15s}
+.kachel-auf.offen .kachel-pfeil{transform:rotate(180deg)}
+.kachel-auf.offen{box-shadow:0 0 0 2px var(--tinte)}
+
+.det-feld{background:var(--papier);border:var(--kante);border-radius:var(--r-xl);
+  box-shadow:var(--schatten);padding:16px 20px 18px;display:flex;
+  flex-direction:column;gap:10px}
+.det-liste{display:flex;flex-direction:column}
+.det-zeile{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;
+  align-items:baseline;padding:10px 0;border-top:1px solid #EFE8DC;
+  font-size:.88rem;width:100%;text-align:left;background:none;border-left:0;
+  border-right:0;border-bottom:0;font-family:var(--text);color:var(--tinte)}
+.det-liste>.det-zeile:first-child{border-top:0}
+button.det-zeile{cursor:pointer}
+button.det-zeile:hover{background:var(--huelle)}
+.det-links{color:var(--meta);white-space:nowrap;font-variant-numeric:tabular-nums}
+.det-mitte{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.det-rechts{font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
+.det-summe{border-top:1.5px solid var(--linie-band);padding-top:4px}
+.det-summe .det-zeile{border-top:0;font-weight:600}
+
+/* Zweite Ebene: die aufgeklappte Tabellenzeile laeuft ueber die volle
+   Breite. In einer Spalte eingeklemmt waere sie nicht zu lesen. */
+tr.anklickbar.auf td{background:var(--band)}
+tr.auf-inhalt td{padding:0;border-top:0;background:var(--huelle)}
+tr.auf-inhalt:hover td{background:var(--huelle)}
+.det-innen{padding:14px 20px 16px;display:flex;flex-direction:column;gap:14px}
+.det-teil{display:flex;flex-direction:column;gap:6px}
+.det-leer{font-size:.84rem;color:var(--meta)}
+
+/* ---------------- Leseansicht eines Eintrags ----------------
+   Zuerst nachsehen, erst dann aendern: Die Angaben stehen wie in den
+   Stammdaten, Beleg und Notiz darunter. Geaendert wird ueber den Knopf im
+   Fuss, nicht aus Versehen beim Draufklicken. */
+.lese-beleg{margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.lese-notiz{margin-top:14px;display:flex;flex-direction:column;gap:5px}
+.lese-notiz p{font-size:.9rem;line-height:1.55;color:var(--tinte-2);
+  white-space:pre-wrap}
+
+/* ---------------- Felder im Dialog, die zusammengehoeren ---------------- */
+.feldgruppe{margin-top:14px;padding:12px 15px;background:var(--band);
+  border:1px solid var(--linie-band);border-radius:15px}
+.feldgruppe>.marke{display:block;margin-bottom:2px}
+.feldgruppe .field{background:var(--papier)}
+.feldgruppe .dialog-hinweis{margin:8px 0 0}
+.wahlgruppe .field:first-child{margin-top:12px}
+
+/* ---------------- Inhalt ---------------- */
+main{padding:22px 24px 26px;display:flex;flex-direction:column;gap:20px;min-width:0}
+/* Die Ansichten haengen ihre Abschnitte hier hinein. Der Abstand gehoert an
+   den Behaelter, nicht an jeden Abschnitt einzeln – sonst klebt mal eine
+   Ueberschrift an der Kachel darueber und mal nicht. */
+#main{display:flex;flex-direction:column;gap:20px;min-width:0}
+
+/* Kopfleiste: Suchen, Aufgabe anlegen, Beleg scannen – auf jeder Seite */
+.kopfleiste{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.suchfeld{display:flex;align-items:center;gap:11px;flex:1 1 260px;min-width:200px;
+  background:var(--papier);border:1px solid var(--linie-feld);border-radius:15px;
+  padding:11px 15px;color:#9B948A;cursor:text}
+.suchfeld-eingabe{border:0;outline:0;background:transparent;flex:1;min-width:0;
+  font-size:.9rem;color:var(--tinte)}
+.suchfeld-eingabe::placeholder{color:#9B948A}
+.knopf-still,.knopf-voll{
+  flex:none;font-family:var(--text);font-size:.84rem;border-radius:14px;
+  cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:8px;
+}
+.knopf-still{border:1px solid #DDD8D0;background:transparent;color:#4B463F;padding:11px 16px}
+.knopf-still:hover{background:var(--seitenleiste)}
+.knopf-voll{border:0;background:var(--tinte);color:var(--huelle);font-weight:500;
+  padding:12px 18px}
+.knopf-voll:hover{background:#4D463C}
+
+.head{display:flex;align-items:flex-end;justify-content:space-between;
+  gap:14px;margin:0;flex-wrap:wrap}
+.head h1{margin-top:2px}
+.block{margin:0;display:flex;flex-direction:column;gap:12px}
+.block h2{margin:0}
+.block>.abschnitt-kopf{margin:0}
+.grid{display:grid;gap:12px}
+
+/* ---------------- Flaechen ----------------
+   Alle Flaechen sprechen dieselbe Sprache wie das Dashboard: warmes Papier
+   auf getoentem Grund, 1,5 px Kante in Sandbraun, grosse Radien, ein
+   angedeuteter Schatten. Dadurch liest sich jede Ansicht als dieselbe App. */
+.card,.tile,.stat,.item,.faellig,.notiz,.tblwrap{
+  background:var(--papier);border:var(--kante);border-radius:var(--r-xl);
+  box-shadow:var(--schatten);
+}
+.card{padding:20px 22px}
+.tile,.stat{padding:18px 20px;display:flex;flex-direction:column;gap:5px}
+.tile .v,.stat .v{font-weight:600;font-size:1.9rem;
+  line-height:1.05;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.tile .s,.stat .s{font-size:.81rem;color:var(--meta)}
+
+/* Eine Kennzahl wird durch ihre Flaeche betont, nicht durch einen farbigen
+   Rahmen: derselbe Griff wie bei der Kostenkachel des Dashboards. */
+.tile.accent,.stat.accent{background:var(--sand);border-color:#EEE0CA}
+.tile.accent .k,.stat.accent .k{color:#5F584C}
+.tile.accent .v,.stat.accent .v{color:#433C31}
+.tile.over,.stat.over{background:var(--rot-hell);border-color:#F0D4CE}
+.tile.over .v,.tile.over .k,.stat.over .v,.stat.over .k{color:var(--rot-tief)}
+.tile.soon,.stat.soon{background:var(--gelb-hell);border-color:#ECD8C2}
+.tile.soon .v,.tile.soon .k,.stat.soon .v,.stat.soon .k{color:var(--gelb-tief)}
+.tile.ok,.stat.ok{background:var(--gruen-hell);border-color:#CFDACD}
+.tile.ok .v,.tile.ok .k,.stat.ok .v,.stat.ok .k{color:var(--gruen-tief)}
+
+.bento{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.bento > *{min-width:0}
+.b-2{grid-column:span 2} .b-3{grid-column:span 3} .b-4{grid-column:span 4}
+.b-r2{grid-row:span 2}
+
+.hero{
+  display:flex;align-items:center;justify-content:space-between;gap:22px;flex-wrap:wrap;
+  background:var(--papier);border:var(--kante);border-radius:var(--r-xl);
+  box-shadow:var(--schatten);padding:24px 26px;height:100%;position:relative;
+  overflow:hidden;
+}
+/* Der Zustand sitzt als Streifen oben, wie auf der Fahrzeugkarte – nicht als
+   farbiger Rahmen rundherum. */
+.hero::before{content:"";position:absolute;inset:0 0 auto 0;height:5px;
+  background:var(--gruen)}
+.hero.over::before{background:var(--rot)}
+.hero.soon::before{background:var(--gelb-punkt)}
+.hero.na::before{background:var(--linie)}
+.hero .lead{min-width:0;flex:1 1 190px}
+.hero .date{font-weight:600;font-size:2.8rem;line-height:1;
+  margin:10px 0 12px;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.hero .metarow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.hero .veh{color:var(--tinte-2);font-size:.85rem}
+.plakette{width:146px;height:146px;flex:0 0 146px}
+.plakette svg{width:100%;height:100%;display:block}
+
+/* =========================================================
+   Was ansteht – das Dashboard
+
+   Farbe codiert hier ausschliesslich Dringlichkeit: rot ueberfaellig,
+   amber innerhalb von 90 Tagen, salbei spaeter. Nie das Fahrzeug, nie die
+   Kategorie – sonst konkurrieren zwei Bedeutungen um dieselbe Farbe und
+   man muss jedes Mal neu ueberlegen, was sie gerade meint.
+   ========================================================= */
+.ansteht{display:flex;align-items:flex-end;justify-content:space-between;
+  gap:14px;flex-wrap:wrap}
+.ansteht .unter{margin-top:5px;font-size:.84rem;color:var(--meta)}
+.zeitwahl{display:flex;gap:6px;background:var(--seitenleiste);
+  border:1px solid var(--linie-zeile);border-radius:14px;padding:4px}
+.zeitwahl button{border:0;background:transparent;color:#5D574F;font-size:.81rem;
+  padding:8px 13px;border-radius:10px;cursor:pointer;white-space:nowrap}
+.zeitwahl button:hover{background:var(--leinwand)}
+.zeitwahl button.an{background:var(--papier);color:var(--tinte);font-weight:500}
+
+.spalten{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.spalte-gross{flex:3 1 420px;min-width:300px;display:flex;flex-direction:column;gap:16px}
+.spalte-klein{flex:1 1 280px;min-width:260px;display:flex;flex-direction:column;gap:16px}
+
+/* ---- Aufgabenkachel: ueberfaellig und die naechsten Termine in EINER Karte.
+   Zwei getrennte Karten wuerden suggerieren, das seien zwei Themen – es ist
+   dieselbe Liste, nur an der Gegenwart geteilt. ---- */
+.aufgaben{background:var(--papier);border:var(--kante);border-radius:var(--r-xl);
+  overflow:hidden;box-shadow:var(--schatten)}
+.auf-kopf{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:15px 22px}
+.auf-zahl{font-weight:600;font-size:.81rem;background:var(--papier);
+  border-radius:999px;padding:2px 9px;flex:none;font-variant-numeric:tabular-nums}
+.auf-seit{margin-left:auto;font-size:.81rem;color:var(--meta)}
+.auf-zeile{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:13px 22px}
+.auf-punkt{width:9px;height:9px;flex:none;border-radius:50%}
+.auf-mitte{display:flex;flex-direction:column;gap:2px;flex:1 1 150px;min-width:0}
+.auf-titel{font-size:1rem;font-weight:600;letter-spacing:-.01em}
+.auf-meta{font-size:.78rem;color:var(--meta)}
+.auf-wert{font-weight:600;font-size:.94rem;white-space:nowrap;flex:none;
+  font-variant-numeric:tabular-nums}
+.auf-knopf{flex:none;font-family:var(--text);font-size:.81rem;font-weight:500;
+  padding:8px 13px;border-radius:10px;cursor:pointer;white-space:nowrap;
+  background:var(--papier)}
+
+/* ueberfaelliger Abschnitt */
+.auf-over{background:var(--rot-hell)}
+.auf-over .auf-marke{color:var(--rot-tief)}
+.auf-over .auf-zahl{color:var(--rot-tief);border:1px solid #F0D4CE}
+.auf-over .auf-zeile{border-top:1px solid #F3DDD7}
+.auf-over .auf-punkt{background:var(--rot)}
+.auf-over .auf-wert{color:var(--rot-tief)}
+.auf-over .auf-knopf{border:1px solid #E0C3BD;color:var(--rot-tief)}
+.auf-over .auf-knopf:hover{background:var(--rot-fest)}
+
+/* Der Schnitt zwischen beiden Abschnitten ist ein 6 px starker Balken direkt
+   auf der Flaeche – kein Spalt, sonst zerfaellt die Karte in zwei. */
+.auf-naechste{background:var(--band);border-top:6px solid #ECE6DB}
+.auf-naechste .auf-kopf{padding:18px 22px 16px}
+.auf-naechste .auf-zahl{color:var(--tinte);border:1px solid #E8E2D6;background:#E8E2D6}
+.auf-naechste .auf-zeile{border-top:1px solid var(--linie-zeile)}
+.auf-naechste .auf-titel{font-size:.97rem;font-weight:500}
+.auf-naechste .auf-punkt{background:var(--gelb-punkt)}
+.auf-naechste .auf-punkt.spaet{background:var(--gruen)}
+.auf-naechste .auf-wert{color:var(--tinte-2)}
+.auf-naechste .auf-knopf{border:1px solid #DDD8D0;color:#4B463F;background:transparent}
+.auf-naechste .auf-knopf:hover{background:var(--papier)}
+.auf-leer{padding:14px 22px 20px;font-size:.84rem;color:var(--meta)}
+
+/* ---- Zeitachse: ein Punkt je Termin, zwoelf Monate nebeneinander ---- */
+.zeitachse{background:var(--papier);border:var(--kante);border-radius:var(--r-xl)}
+.zeitachse>summary{list-style:none;cursor:pointer;display:flex;align-items:center;
+  gap:12px;flex-wrap:wrap;padding:16px 22px}
+.zeitachse>summary::-webkit-details-marker{display:none}
+.za-hinweis{font-size:.78rem;color:var(--meta);min-width:0}
+.za-pfeil{margin-left:auto;width:26px;height:26px;flex:none;border-radius:50%;
+  background:var(--seitenleiste);color:#5D574F;display:grid;place-items:center;
+  font-size:.75rem}
+.zeitachse[open] .za-pfeil{transform:rotate(180deg)}
+.za-raster{padding:2px 22px 22px;display:grid;
+  grid-template-columns:minmax(68px,96px) repeat(12,minmax(0,1fr));
+  gap:4px 2px;align-items:center}
+.za-monat{font-family:var(--mono);font-size:.62rem;color:var(--grau);text-align:center}
+.za-fz{font-size:.78rem;color:var(--stark);white-space:nowrap;overflow:hidden;
+  border:0;background:none;padding:0;text-align:left;cursor:pointer}
+.za-fz:hover{color:var(--orange)}
+.za-zelle{height:20px;border-radius:5px;background:var(--band);border:0;padding:0;
+  display:flex;align-items:center;justify-content:center;gap:3px}
+/* Eine Zelle mit Terminen laesst sich oeffnen; eine leere nicht. */
+button.za-zelle{cursor:pointer}
+button.za-zelle:hover{box-shadow:0 0 0 2px var(--tinte)}
+.za-mehr{font-size:9px;color:var(--meta);line-height:1}
+.monat-liste{display:flex;flex-direction:column;margin:4px 0 6px;
+  border:var(--kante);border-radius:var(--r-m);overflow:hidden}
+.monat-zeile{padding:12px 14px;gap:10px}
+.monat-zeile+.monat-zeile{border-top:1px solid var(--linie-zeile)}
+.monat-zeile.over{background:var(--rot-hell)}
+.monat-zeile.over .auf-punkt{background:var(--rot)}
+.monat-zeile.soon .auf-punkt{background:var(--gelb-punkt)}
+.monat-zeile .auf-punkt{background:var(--gruen)}
+.monat-zeile .auf-knopf{border:1px solid #DDD8D0;color:#4B463F;background:var(--papier)}
+.monat-zeile.over .auf-knopf{border-color:#E0C3BD;color:var(--rot-tief)}
+.za-zelle.over{background:var(--rot-fest)}
+.za-zelle.soon{background:var(--gelb-fest)}
+.za-zelle.later{background:var(--gruen-hell)}
+.za-punkt{width:7px;height:7px;border-radius:50%}
+.za-punkt.over{background:var(--rot)}
+.za-punkt.soon{background:var(--gelb-punkt)}
+.za-punkt.later{background:var(--gruen)}
+
+/* ---- Fahrzeugkarten ---- */
+.fz-kopfzeile{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fz-kopfzeile .anzahl{font-weight:600;font-size:.78rem;color:var(--meta);
+  font-variant-numeric:tabular-nums}
+.fz-kopfzeile .verweis{margin-left:auto;font-size:.81rem;color:var(--meta);cursor:pointer}
+.fz-kopfzeile .verweis:hover{color:var(--orange)}
+
+.fzraster{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px}
+.fzkarte{
+  background:var(--papier);border:var(--kante);border-radius:var(--r-l);
+  cursor:pointer;overflow:hidden;display:flex;flex-direction:column;
+  box-shadow:var(--schatten);transition:box-shadow .14s,transform .14s;
+}
+.fzkarte:hover{box-shadow:0 4px 12px rgba(59,53,45,.10);transform:translateY(-2px)}
+/* Der Streifen oben traegt den schlechtesten Zustand des Fahrzeugs – die
+   einzige Stelle der Karte, an der Farbe ueber die Flaeche geht. */
+.fzk-band{display:block;height:5px;background:var(--gruen)}
+.fzkarte.over .fzk-band{background:var(--rot)}
+.fzkarte.soon .fzk-band{background:var(--gelb-punkt)}
+.fzk-leib{padding:16px 18px 0;display:flex;flex-direction:column;gap:14px;flex:1}
+
+.fzk-kopf{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.fzk-titel{display:flex;flex-direction:column;align-items:flex-start;gap:6px;
+  flex:1 1 130px;min-width:0}
+.fzk-name{font-family:var(--kopf);font-weight:600;font-size:1.19rem;line-height:1.2;
+  letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  max-width:100%}
+.fzk-modell{font-size:.78rem;color:var(--meta);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fzk-marke{font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;
+  border-radius:999px;padding:4px 9px;white-space:nowrap;flex:none;text-transform:uppercase}
+.fzk-marke.over{color:var(--rot-tief);background:var(--rot-fest);border:1px solid #ECD0CB}
+.fzk-marke.soon{color:var(--gelb-tief);background:var(--gelb-fest);border:1px solid #ECD8C2}
+.fzk-marke.ok{color:var(--gruen-tief);background:var(--gruen-fest);border:1px solid #CFDACD}
+
+/* Kennzeichen, echtes Schild */
+.plate-anzeige{display:inline-flex;align-items:stretch;border:1.5px solid var(--tinte);
+  border-radius:5px;overflow:hidden;background:var(--papier);flex:none}
+.plate-anzeige .plate-eu{width:14px;padding:0 0 3px;justify-content:flex-end}
+.plate-anzeige .txt{padding:3px 7px;display:flex;align-items:center;
+  font-weight:600;font-size:.78rem;letter-spacing:.05em;white-space:nowrap}
+
+/* HU-Zeile: die Plakette steht direkt links vom Datum */
+.fzk-tuv{display:flex;align-items:center;gap:13px;background:var(--huelle);
+  border-radius:var(--r-m);padding:12px 13px}
+.plakette-klein{width:44px;height:44px;flex:none;border-radius:50%;
+  display:grid;place-items:center;position:relative;font-weight:600;
+  font-size:.94rem;letter-spacing:-.02em;font-variant-numeric:tabular-nums;
+  box-shadow:inset 0 0 0 1.5px rgba(59,53,45,.16)}
+.plakette-ring{position:absolute;inset:4px;border-radius:50%;
+  border:1px dashed rgba(59,53,45,.26)}
+.fzk-tuvtext{display:flex;flex-direction:column;gap:3px;min-width:0}
+.fzk-datum{font-weight:600;font-size:1.19rem;letter-spacing:-.025em;line-height:1;
+  white-space:nowrap}
+.fzk-rest{margin-left:auto;font-size:.78rem;color:var(--tinte-2);
+  white-space:nowrap;flex:none}
+.fzk-rest.warn{color:var(--rot-tief);font-weight:600}
+
+.fzk-liste{display:flex;flex-direction:column;gap:3px}
+.fzz{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;
+  font-size:.9rem}
+.fzz.over{background:var(--rot-hell)}
+.fzz.over .nm{font-weight:600}
+.fzz.over .rest{color:var(--rot-tief)}
+.fzz .ampel{width:7px;height:7px;border-radius:50%;flex:none;background:var(--gruen)}
+.fzz.over .ampel{background:var(--rot)}
+.fzz.soon .ampel{background:var(--gelb-punkt)}
+.fzz .nm{min-width:0;color:var(--stark);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.fzz .rest{margin-left:auto;flex:none;font-weight:600;font-size:.81rem;
+  color:var(--tinte-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.fzk-mehr,.fzk-leer{font-size:.8rem;color:var(--meta);padding:4px 12px}
+
+/* Das Band laeuft bis an die Kartenkante – deshalb negative Aussenabstaende. */
+.fzk-fuss{margin:auto -18px 0;padding:13px 18px;display:flex;align-items:center;
+  gap:10px;flex-wrap:wrap;background:var(--band);border-top:1.5px solid var(--linie-band);
+  font-size:.78rem;color:var(--tinte-2)}
+.fzk-fuss .betrag{font-weight:600;font-size:.88rem;color:var(--stark);white-space:nowrap}
+.fzk-pfeil{margin-left:auto;flex:none;background:#E8E3DA;color:var(--tinte);
+  font-size:.78rem;font-weight:500;padding:8px 13px;border-radius:10px}
+.fzkarte:hover .fzk-pfeil{background:#DED8CD}
+
+/* ---- Rechte Spalte ---- */
+.kosten-kachel{background:var(--sand);border:1px solid #EEE0CA;border-radius:var(--r-xl);
+  padding:22px;display:flex;flex-direction:column;gap:14px}
+.kosten-kachel .marke{color:#5F584C}
+.kosten-summe{font-weight:600;font-size:clamp(30px,2.6vw,42px);line-height:1;
+  letter-spacing:-.03em;white-space:nowrap;color:#433C31;font-variant-numeric:tabular-nums}
+.kosten-balken{display:flex;align-items:flex-end;gap:5px;height:58px}
+.kosten-balken span{flex:1;background:#DED2BD;border-radius:4px 4px 2px 2px;min-height:2px}
+.kosten-balken span.hoch{background:#B8624F}
+.kosten-achse{display:flex;justify-content:space-between;font-family:var(--mono);
+  font-size:.66rem;color:#5F584C}
+.kosten-je{display:flex;flex-direction:column;gap:8px;padding-top:6px;
+  border-top:1px solid #E6D8C2}
+.kosten-zeile{display:flex;align-items:center;gap:10px}
+.kosten-zeile .nm{font-size:.81rem;color:#4A4338;flex:none}
+.kosten-zeile .bahn{flex:1 1 40px;min-width:30px;height:6px;border-radius:3px;
+  background:#EBE0CD;overflow:hidden}
+.kosten-zeile .bahn i{display:block;height:100%;border-radius:3px;background:#C9A274}
+.kosten-zeile:first-child .bahn i{background:#B8624F}
+.kosten-zeile .wert{font-weight:600;font-size:.78rem;color:#4A4338;white-space:nowrap;
+  flex:none;font-variant-numeric:tabular-nums}
+
+.hist-kachel{background:var(--papier);border:var(--kante);border-radius:var(--r-xl);
+  overflow:hidden;box-shadow:var(--schatten)}
+.hist-kopf{padding:20px 20px 12px;display:flex;align-items:center;gap:10px}
+.hist-zeile{display:flex;align-items:flex-start;gap:12px;padding:12px 20px;
+  border-top:1px solid #EFE8DC;cursor:pointer}
+.hist-zeile:hover{background:var(--huelle)}
+.hist-datum{font-weight:600;font-size:.75rem;color:var(--meta);flex:none;
+  padding-top:2px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.hist-mitte{display:flex;flex-direction:column;gap:2px;flex:1 1 auto;min-width:0}
+.hist-titel{font-size:.9rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.hist-meta{font-size:.75rem;color:var(--meta);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.hist-betrag{font-weight:600;font-size:.88rem;white-space:nowrap;flex:none;
+  font-variant-numeric:tabular-nums}
+.hist-fuss{padding:13px 20px;border-top:1.5px solid var(--linie-band);
+  background:var(--band);display:flex;align-items:center;gap:10px;font-size:.81rem;
+  color:#4F4940}
+.hist-fuss .verweis{margin-left:auto;font-weight:500;cursor:pointer}
+.hist-fuss .verweis:hover{color:var(--orange)}
+
+.erfassen{background:var(--lavendel);border:1px solid #DDD8EE;border-radius:var(--r-xl);
+  padding:22px;display:flex;flex-direction:column;gap:12px}
+.erfassen .marke{color:#4C4668}
+.erfassen p{font-size:.84rem;line-height:1.5;color:#3F3A52}
+.erfassen .reihe{display:flex;gap:8px;flex-wrap:wrap}
+.erfassen .zweit{border:1px solid #CDC7E2;background:transparent;color:#3F3A52;
+  font-family:var(--text);font-size:.81rem;padding:10px 15px;border-radius:11px;
+  cursor:pointer;white-space:nowrap}
+.erfassen .zweit:hover{background:#E0DBF0}
+.erfassen .knopf-voll{padding:10px 15px;border-radius:11px;font-size:.81rem}
+
+/* ---- Legende: die Farbregel steht auf der Seite, nicht nur im Kopf ---- */
+.farblogik{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:12px 16px;
+  background:var(--seitenleiste);border:1px solid var(--linie-zeile);border-radius:16px}
+.farblogik .probe{width:22px;height:8px;border-radius:4px;flex:none}
+.farblogik .paar{display:flex;align-items:center;gap:8px;font-size:.81rem;color:var(--stark)}
+.farblogik .satz{font-size:.81rem;color:var(--tinte-2);min-width:0}
+
+/* ---------------- Wartungskacheln ---------------- */
+.itemgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:12px}
+/* Eine Wartungskachel traegt ihren Zustand als Streifen oben und, wenn sie
+   ueberfaellig ist, als getoente Flaeche – dieselben zwei Griffe wie auf der
+   Fahrzeugkarte des Dashboards. */
+.item{padding:0;display:flex;flex-direction:column;min-width:0;
+  cursor:pointer;overflow:hidden;transition:box-shadow .14s,transform .14s}
+.item:hover{box-shadow:0 4px 12px rgba(59,53,45,.10);transform:translateY(-2px)}
+.item::before{content:"";height:5px;background:var(--gruen);flex:none}
+.item.over::before{background:var(--rot)}
+.item.soon::before{background:var(--gelb-punkt)}
+.item.na::before{background:var(--linie)}
+.item .top{display:flex;align-items:center;gap:9px;padding:14px 16px 0}
+.item .ic{font-size:1rem;line-height:1}
+.item .nm{font-weight:600;font-size:1rem;letter-spacing:-.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Die Zeilen dehnen sich, damit das farbige Band immer am unteren Rand der
+   Kachel sitzt. Ohne das rutscht es bei kurzen Kacheln nach oben und laesst
+   einen weissen Streifen bis zur Kante stehen. */
+.item .rows{font-size:.78rem;color:var(--meta);display:grid;gap:3px;
+  align-content:start;flex:1;padding:10px 16px 12px}
+.item .rows b{color:var(--stark);font-weight:600;font-variant-numeric:tabular-nums}
+.item.over .rows b{color:var(--rot-tief)}
+.item .foot{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:11px 16px;background:var(--band);border-top:1.5px solid var(--linie-band)}
+.item.over .foot{background:var(--rot-hell);border-top-color:#F3DDD7}
+
+/* ---------------- Statusmarken ---------------- */
+.pill{display:inline-block;padding:4px 9px;border-radius:999px;
+  font-family:var(--mono);font-size:.62rem;font-weight:400;white-space:nowrap;
+  letter-spacing:.1em;text-transform:uppercase;border:1px solid}
+.pill.ok{background:var(--gruen-fest);color:var(--gruen-tief);border-color:#CFDACD}
+.pill.soon{background:var(--gelb-fest);color:var(--gelb-tief);border-color:#ECD8C2}
+.pill.over{background:var(--rot-fest);color:var(--rot-tief);border-color:#ECD0CB}
+.pill.na{background:#F0EBE1;color:var(--meta);border-color:var(--linie-band)}
+.tag{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.72rem;
+  font-weight:500;border:1px solid var(--linie-band);color:var(--tinte-2);
+  background:var(--band)}
+/* Farbe je Ereignisart, aber nur als Rand und Schrift – gefuellt waren es
+   vier bunte Kaestchen in jeder Zeile. So bleibt die Liste ruhig und die Art
+   trotzdem auf einen Blick unterscheidbar. */
+.tag.a-wartung{border-color:#2F73BE;color:#215490}
+.tag.a-reparatur{border-color:#C2410C;color:#9A330A}
+.tag.a-tuev{border-color:#7B5EA7;color:#5F4785}
+.tag.a-reifen{border-color:#0E7C86;color:#0B626A}
+.tag.a-ausbau{border-color:#5B7C99;color:#3F5C75}
+.tag.a-sonst{border-color:var(--linie);color:var(--tinte-2)}
+.ampel{width:11px;height:11px;border-radius:50%;flex:0 0 11px;display:inline-block}
+.ampel.ok{background:var(--gruen)} .ampel.soon{background:var(--gelb-punkt)}
+.ampel.over{background:var(--rot)} .ampel.na{background:var(--grau)}
+
+/* Zaehlchips: weiss mit farbigem Punkt. Gefuellte Flaechen haben zusammen mit
+   den Karten darunter zu viel Farbe in den oberen Bildschirm gebracht. Der
+   Punkt genuegt – die Zahl daneben traegt die Aussage. */
+.chips{display:flex;gap:9px;flex-wrap:wrap}
+.chip{display:flex;align-items:center;gap:9px;border:1px solid var(--linie-band);
+  background:var(--band);border-radius:999px;padding:7px 15px;
+  font-size:.81rem;color:var(--tinte-2)}
+.chip .dot{width:9px;height:9px;border-radius:50%;flex:none}
+.chip .n{font-variant-numeric:tabular-nums;font-weight:600;font-size:.88rem;
+  color:var(--tinte)}
+.chip.over{background:var(--rot-hell);border-color:#F0D4CE;color:var(--rot-tief)}
+.chip.over .dot{background:var(--rot)}
+.chip.over .n{color:var(--rot-tief)}
+.chip.soon{background:var(--gelb-hell);border-color:#ECD8C2;color:var(--gelb-tief)}
+.chip.soon .dot{background:var(--gelb-punkt)}
+.chip.ok{background:var(--gruen-hell);border-color:#CFDACD;color:var(--gruen-tief)}
+.chip.ok .dot{background:var(--gruen)}
+.chip.geld{background:var(--sand);border-color:#EEE0CA;color:#5F584C;cursor:pointer}
+.chip.geld:hover{background:#F0E4D2}
+
+/* ---------------- Faelligkeitszeilen ---------------- */
+.faellig-liste{display:grid;gap:8px}
+.ff-legende{display:flex;gap:16px;flex-wrap:wrap;padding:0 2px 10px;
+  font-size:.75rem;color:var(--tinte-2);font-weight:700}
+/* Faelligkeitszeilen folgen den Aufgabenzeilen des Dashboards: ueberfaellig
+   wird die ganze Zeile getoent, alles andere bleibt ruhig. */
+.faellig{
+  display:grid;grid-template-columns:minmax(132px,auto) minmax(0,1fr) auto auto;
+  gap:9px 14px;align-items:center;padding:12px 15px;border-radius:var(--r-m);
+  box-shadow:none;
+}
+.faellig.over{background:var(--rot-hell);border-color:#F0D4CE}
+.faellig.soon{background:var(--gelb-hell);border-color:#ECD8C2}
+.ff-name{display:flex;align-items:center;gap:9px;min-width:0}
+.faellig .ic{font-size:.95rem;line-height:1;flex:none}
+.faellig .nm{font-weight:600;font-size:.97rem;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ff-werte{display:flex;align-items:center;gap:14px;flex-wrap:wrap;min-width:0;
+  justify-content:flex-end}
+.fw{display:inline-flex;align-items:baseline;gap:5px;font-size:.8rem;
+  color:var(--tinte-2);font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:700}
+.fw-s{color:var(--grau);font-size:.72rem;line-height:1}
+.fw.stark{font-weight:800;color:var(--tinte);font-size:.88rem}
+.fw.stark .fw-s{color:var(--orange)}
+.fw.warn{color:var(--rot);font-weight:800}
+.fw.warn .fw-s{color:var(--rot)}
+.ff-akt{flex:none;justify-self:end}
+
+/* ---------------- Historie ---------------- */
+.jahr-kopf{display:flex;align-items:center;gap:12px;margin:32px 0 12px}
+.jahr{font-weight:600;font-size:1.3rem;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums}
+.jahr-linie{flex:1;height:0;border-top:1px solid var(--linie-zeile)}
+.jahr-meta{font-size:.78rem;color:var(--meta);white-space:nowrap}
+.jahr-summe{font-weight:600;font-size:.84rem;white-space:nowrap;
+  font-variant-numeric:tabular-nums;background:var(--band);
+  border:1px solid var(--linie-band);border-radius:999px;padding:3px 11px}
+
+/* Der Verlauf ist eine Karte mit Zeilen, keine lose Liste – wie die
+   Historie-Kachel auf dem Dashboard. */
+.verlauf{display:grid;gap:0;background:var(--papier);border:var(--kante);
+  border-radius:var(--r-xl);box-shadow:var(--schatten);overflow:hidden}
+.vz{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:14px;
+  border:0;border-top:1px solid #EFE8DC;border-radius:0;background:none;
+  padding:12px 20px;cursor:pointer;
+}
+.vz:first-child{border-top:0}
+.vz:hover{background:var(--huelle)}
+.vz-datum{flex:none}
+.tag-tag{display:inline-block;font-weight:600;font-size:.75rem;color:var(--meta);
+  white-space:nowrap;font-variant-numeric:tabular-nums}
+.vz-mitte{min-width:0}
+.vz-kopf{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.vz-titel{font-weight:500;font-size:.9rem;min-width:0}
+.vz-sub{font-size:.75rem;color:var(--meta);margin-top:2px}
+.vz-rechts{display:flex;align-items:center;gap:12px;flex:none}
+.vz-betrag{font-weight:600;font-size:.88rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.vz-beleg{font-size:.78rem;white-space:nowrap}
+.vz-akt{flex:none}
+
+/* ---------------- Tabellen ---------------- */
+.tblwrap{overflow:auto;padding:0}
+table{width:100%;border-collapse:collapse;min-width:560px}
+th{font-family:var(--mono);font-weight:400;font-size:.62rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--grau);text-align:left;padding:14px 20px;
+  background:var(--band);border-bottom:1.5px solid var(--linie-band);white-space:nowrap}
+td{padding:13px 20px;border-top:1px solid #EFE8DC;font-size:.88rem;vertical-align:middle}
+thead+tbody tr:first-child td{border-top:0}
+tbody tr:hover td{background:var(--huelle)}
+tr.anklickbar{cursor:pointer}
+tr.anklickbar:focus-visible{outline:2px solid var(--tinte);outline-offset:-2px}
+.num{white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:600}
+
+/* ---------------- Leerzustand, Hinweise ---------------- */
+.empty{padding:34px 28px;text-align:center;color:var(--meta);
+  border:1.5px dashed var(--linie);border-radius:var(--r-xl);background:var(--papier)}
+.empty .btn{margin-top:16px;display:inline-block;width:auto}
+.kasten{margin-top:16px;background:var(--gruen-hell);border:1px solid #CFDACD;
+  border-radius:var(--r-m);padding:12px 16px;font-size:.88rem;color:var(--gruen-tief)}
+.kasten.warn{background:var(--rot-hell);border-color:#F0D4CE;color:var(--rot-tief)}
+
+/* ---------------- Dialog ---------------- */
+/* Auf schmalen Fenstern klappt der Dialog von unten auf, auf breiten steht er
+   mittig – ein Blatt am unteren Rand eines 1400 Pixel breiten Bildschirms
+   waere eine Geste ohne Anlass. */
+.overlay{position:fixed;inset:0;background:rgba(59,53,45,.45);display:none;
+  align-items:center;justify-content:center;padding:24px;z-index:60}
+.overlay.show{display:flex}
+.modal{background:var(--papier);width:100%;max-width:600px;max-height:90vh;overflow-y:auto;
+  border:var(--kante);border-radius:var(--r-xl);padding:0;
+  box-shadow:0 18px 44px rgba(59,53,45,.18)}
+.modal header{padding:20px 20px 14px;display:flex;justify-content:space-between;
+  align-items:flex-start;gap:10px;position:sticky;top:0;background:var(--papier);z-index:1}
+.modal header h3{font-size:1.2rem}
+.modal .body{padding:0 20px 8px;display:grid;gap:0}
+.modal footer{padding:16px 20px 22px;display:flex;gap:10px;
+  position:sticky;bottom:0;background:var(--band);border-top:1.5px solid var(--linie-band)}
+.modal footer .btn{flex:1}
+
+/* Eingabefeld: Beschriftung sitzt im Rahmen, nicht darueber */
+.field{background:var(--papier);border:1px solid var(--linie-feld);border-radius:15px;
+  padding:9px 15px 8px;margin-top:12px}
+.field:focus-within{border-color:var(--linie);box-shadow:0 0 0 3px rgba(59,53,45,.10)}
+.field label{display:block;font-family:var(--mono);font-weight:400;font-size:.62rem;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--grau)}
+.field input,.field select,.field textarea{
+  width:100%;border:0;outline:0;background:transparent;padding:4px 0;font-size:.94rem}
+.field textarea{resize:vertical;min-height:70px}
+.field input::placeholder,.field textarea::placeholder{color:#B5AEA3}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row2 .field{margin-top:0}
+.filechip{display:flex;align-items:center;gap:8px;font-size:.8rem;
+  color:var(--tinte-2);margin-top:6px}
+
+/* Ein Satz im Dialog, der erklaert, was ein Feld bewirkt – kurz genug, dass
+   man ihn liest, statt ihn zu ueberspringen. */
+.dialog-hinweis{font-size:.81rem;line-height:1.5;color:var(--meta);margin:0 0 4px}
+
+.loeschzeile{margin-top:18px;padding-top:14px;border-top:1px solid var(--linie-zeile)}
+.loeschzeile .btn.del{color:var(--rot-tief);border-color:#E0C3BD}
+.loeschzeile .btn.del:hover{background:var(--rot-hell)}
+
+/* Zwei Wege, eine Frage: die Auswahl zeigt beide gleichrangig, statt einen
+   davon als Voreinstellung zu setzen. */
+.auswahl{display:flex;flex-direction:column;gap:10px}
+.auswahl-knopf{display:flex;flex-direction:column;gap:4px;text-align:left;
+  padding:15px 17px;border:var(--kante);border-radius:var(--r-m);
+  background:var(--papier);cursor:pointer;width:100%;
+  transition:border-color .12s,background .12s}
+.auswahl-knopf:hover{border-color:var(--tinte);background:var(--huelle)}
+.auswahl-titel{font-weight:600;font-size:1rem}
+.auswahl-text{font-size:.81rem;color:var(--meta);line-height:1.45}
+
+/* ---------------- Meldung ---------------- */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(14px);
+  background:var(--tinte);color:var(--papier);padding:13px 20px;border-radius:var(--r-m);
+  font-weight:800;font-size:.9rem;opacity:0;transition:opacity .2s,transform .2s;
+  z-index:70;max-width:88vw;text-align:center;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ---------------- Anmeldung ---------------- */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:22px}
+.login-card{width:100%;max-width:420px;display:grid;gap:0}
+.login-card .brand{padding-bottom:10px}
+.login-sub{color:var(--tinte-2);font-size:.95rem;margin:4px 0 18px}
+.login-btns{display:grid;gap:10px;margin-top:4px}
+.login-btns .btn{width:100%;padding:14px}
+.login-msg{font-size:.88rem;min-height:1em;margin-top:10px;font-weight:700}
+.login-msg.err{color:var(--rot)}
+.login-msg.ok{color:var(--gruen)}
+
+.profil-wahl{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;padding:6px 0 4px}
+.profil{background:none;border:0;cursor:pointer;padding:4px;
+  display:flex;flex-direction:column;align-items:center;gap:10px}
+.profil-bild{display:grid;place-items:center;width:72px;height:72px;border-radius:50%;
+  background:#DED9EA;color:#3F3A52;font-weight:600;font-size:1.7rem;
+  border:1px solid transparent;transition:transform .14s,box-shadow .14s}
+.profil:hover .profil-bild{transform:translateY(-2px);box-shadow:0 4px 12px rgba(59,53,45,.12)}
+.profil-name{font-weight:500;font-size:1rem}
+.profil-name.gross{font-size:1.4rem}
+.profil-gross{display:flex;align-items:center;gap:13px;padding:2px 0 8px}
+.profil-gross .profil-bild{width:50px;height:50px;font-size:1.3rem;border-radius:var(--r-s)}
+.profil-bild.klein{width:32px;height:32px;font-size:.84rem;border-radius:50%}
+
+/* ---------------- Suche ---------------- */
+.such-treffer{display:grid;gap:0;max-height:48vh;overflow-y:auto;margin-top:6px}
+.st-zeile{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;
+  align-items:center;width:100%;text-align:left;background:none;border:0;
+  border-bottom:var(--punktiert);padding:11px 2px;cursor:pointer}
+.st-zeile:hover{background:var(--papier-2)}
+.st-art{min-width:66px}
+.st-mitte{min-width:0}
+.st-titel{display:block;font-weight:700;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.st-rechts{font-size:.82rem;color:var(--tinte-2);white-space:nowrap;
+  font-weight:800;font-variant-numeric:tabular-nums}
+
+/* ---------------- Notizen ---------------- */
+.notiz{display:flex;align-items:flex-start;gap:12px;padding:13px 16px;flex-wrap:wrap}
+.notiz .dt{font-size:.8rem;color:var(--tinte-2);white-space:nowrap;padding-top:2px}
+.notiz .txt{flex:1 1 200px;font-size:.92rem;min-width:0;white-space:pre-wrap;line-height:1.55}
+
+/* ---------------- Schmale Fenster ---------------- */
+@media (max-width:1040px){
+  .bento{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .b-3,.b-4{grid-column:span 2}
+  .b-r2{grid-row:auto}
+}
+@media (max-width:900px){
+  .faellig{grid-template-columns:minmax(0,1fr) auto auto;gap:8px 11px}
+  .ff-name{grid-column:1;grid-row:1}
+  .faellig > .pill{grid-column:2;grid-row:1}
+  .ff-akt{grid-column:3;grid-row:1}
+  .ff-werte{grid-column:1/-1;grid-row:2;justify-content:flex-start;gap:12px}
+}
+@media (max-width:860px){
+  /* Die Seitenleiste wird zur Kopfzeile, die Navigation wandert nach unten:
+     waagerechtes Scrollen versteckt Punkte, die niemand vermutet. */
+  /* Am Handy sitzt die Huelle nicht mehr auf der Leinwand – dort zaehlt
+     jeder Rand, den man nicht verschenkt. */
+  body{padding:0}
+  .app{grid-template-columns:1fr;border-radius:0;min-height:100vh;max-width:none}
+  .side{position:sticky;top:0;z-index:20;height:auto;flex-direction:row;
+    align-items:center;flex-wrap:wrap;gap:12px;padding:12px 16px;
+    border-right:0;border-bottom:1px solid var(--linie)}
+  .side-top{flex-direction:row;align-items:center;gap:12px;flex:1;min-width:0}
+  .side-top .plate-wahl{flex:1;min-width:0;max-width:230px;margin:0}
+  .brand-name{display:none}
+  .side-foot{flex-direction:row;align-items:center;gap:8px;margin:0 0 0 auto}
+  .storagebox{border:0;padding:0;background:transparent}
+  .st-on,.st-ab,.st-sub{display:none}
+
+  /* Die Gruppenueberschriften wuerden in der Leiste unten zwei Plaetze im
+     Sechserraster belegen und es aus dem Tritt bringen. */
+  .nav-gruppe{display:none}
+  nav{position:fixed;left:0;right:0;bottom:0;z-index:30;
+    display:grid;grid-template-columns:repeat(6,1fr);gap:4px;
+    background:var(--papier);border-top:var(--kante);padding:8px 8px calc(8px + env(safe-area-inset-bottom))}
+  .nav-btn{flex-direction:column;gap:3px;padding:8px 2px;font-size:.66rem;
+    text-align:center;justify-content:center;overflow:hidden}
+  .nav-btn .ic{width:auto;font-size:1.05rem}
+  .nav-btn .lang{display:none}
+  .nav-btn .kurz{display:block}
+
+  /* Kennzeichen, Name und Zustand brauchen nebeneinander zu viel Platz –
+     der Name darf umbrechen, statt abgeschnitten zu werden. */
+  .fzk-kopf{gap:9px 11px}
+  .fzk-name{white-space:normal}
+  .fzk-modell{white-space:normal}
+  .auf-zeile{padding:13px 16px}
+  .auf-kopf{padding:14px 16px}
+  .za-raster{padding:2px 14px 18px}
+  .farblogik{gap:12px}
+
+  main{padding:18px 16px 96px}
+  h1{font-size:1.5rem}
+  .hero .date{font-size:2.6rem}
+  .bento{grid-template-columns:1fr}
+  .b-2,.b-3,.b-4{grid-column:span 1}
+  .row2{grid-template-columns:1fr}
+  .overlay{align-items:flex-end;padding:0}
+  .modal{max-width:none;max-height:92vh;border:0;border-top:var(--kante);
+    border-radius:var(--r-l) var(--r-l) 0 0}
+}
+@media print{
+  .side,nav,.rowact,.iconbtn,.toast,.kopfleiste{display:none!important}
+  .app{display:block;border-radius:0;background:#fff}
+  main{max-width:100%;padding:0}
+  .card,.tile,.item,.faellig,.hero,.fzkarte,.aufgaben,.hist-kachel{
+    box-shadow:none;break-inside:avoid}
+  body{background:#fff;padding:0}
+}
+
+/* --- Beleg ansehen und Sicherung ---------------------------------------
+   Belege werden im Fenster der App gezeigt, nicht in einem neuen Tab: Bei
+   Apps Script laeuft die Seite in einem Rahmen, in dem neue Fenster und
+   Downloads gesperrt sind. */
+.beleg-buehne{display:grid;gap:12px;justify-items:center;max-height:70vh;overflow:auto}
+.beleg-bild{max-width:100%;height:auto;border-radius:10px;border:1px solid var(--line)}
+.beleg-seite{max-width:100%;height:auto;border-radius:6px;border:1px solid var(--line);
+             box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.sicherung-feld{width:100%;font-family:var(--mono);font-size:11.5px;line-height:1.5;
+                border:1px solid var(--line);border-radius:10px;padding:10px;
+                background:var(--flaeche-2);color:var(--tinte);resize:vertical}
+
+/* Fehlermeldung im Dialog. Frueher blieb der Dialog bei einem Fehler
+   wortlos stehen - es sah aus, als reagiere der Knopf nicht. */
+.dialog-fehler{display:none;margin:10px 0 2px;padding:10px 12px;border-radius:10px;
+  background:rgba(184,58,42,.10);border:1px solid rgba(184,58,42,.35);
+  color:var(--rot);font-size:13.5px;font-weight:600;line-height:1.5}
+.dialog-fehler.an{display:block}
+
+/* --- Beruehrziele auf dem Handy -----------------------------------------
+   Gemessen waren Kennzeichenwahl 30 px, Bearbeiten-Knoepfe 35 px und das
+   Suchfeld 24 px. Empfohlen sind 44 px; darunter trifft der Daumen daneben.
+   Nur auf schmalen Schirmen - am Schreibtisch zielt die Maus genau. */
+@media (max-width: 767px) {
+  .iconbtn, .btn.sm, .btn.ghost.sm, .plate-knopf, .auf-knopf, .lite,
+  .st-ab, .dok-titel, .kachel-auf, .zeitwahl button {
+    min-height: 44px;
+  }
+  .iconbtn, .btn.sm, .btn.ghost.sm, .auf-knopf { padding-left: 14px; padding-right: 14px; }
+  .suchfeld { min-height: 46px; }
+  .suchfeld-eingabe { min-height: 30px; }
+  .plate-eintrag { min-height: 48px; }
+  .nav-btn { min-height: 48px; }
+  /* Die Zeitachse ist ein dichtes Raster - 44 px je Zelle wuerde sie
+     sprengen. 32 px sind ein Kompromiss, den der Daumen noch trifft. */
+  .za-zelle, .za-fz { min-height: 32px; }
+  .vz-beleg { display: inline-block; min-height: 32px; line-height: 32px; padding: 0 8px; }
+
+  /* Tabellen scrollen seitwaerts - das muss man sehen koennen. */
+  .tblwrap { position: relative; }
+  .tblwrap::after {
+    content: "‹ seitlich wischen ›";
+    display: block; text-align: right; padding: 4px 2px 0;
+    font-size: 11px; color: var(--tinte-3, #8B8478);
+  }
+}
+
+/* --- Ladeanzeige -------------------------------------------------------
+   Der erste Serverbesuch bei Apps Script dauert; ohne Zeichen dafuer wirkt
+   die App haengend. */
+.laedt{display:grid;gap:10px;justify-items:center;padding:80px 20px;text-align:center}
+.laedt-text{font-weight:650;color:var(--tinte)}
+.laedt-klein{font-size:12.5px;color:var(--tinte-3,#8B8478)}
+.laedt-punkte{display:flex;gap:7px}
+.laedt-punkte i{width:9px;height:9px;border-radius:50%;background:var(--akzent,#EC663E);
+  display:block;animation:laedtHuepf 1.1s infinite ease-in-out}
+.laedt-punkte i:nth-child(2){animation-delay:.16s}
+.laedt-punkte i:nth-child(3){animation-delay:.32s}
+@keyframes laedtHuepf{0%,80%,100%{transform:translateY(0);opacity:.45}
+  40%{transform:translateY(-7px);opacity:1}}
+@media (prefers-reduced-motion:reduce){.laedt-punkte i{animation:none}}
+
+/* --- Beleg scannen: Seiten sammeln --------------------------------------
+   Mehrere Seiten werden zu einem PDF. Die Liste zeigt die Reihenfolge, in
+   der sie darin landen - deshalb die Nummer vorn und die Pfeile hinten. */
+.scan-knoepfe{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.scan-knoepfe .btn{justify-content:center}
+.seiten-liste{display:grid;gap:8px;max-height:46vh;overflow:auto;margin-bottom:4px}
+.seiten-leer{padding:22px 16px;text-align:center;font-size:13px;color:var(--tinte-3,#8B8478);
+  border:1.5px dashed var(--linie-feld);border-radius:14px;line-height:1.6}
+.seite{display:flex;align-items:center;gap:10px;padding:8px 10px;
+  border:1px solid var(--linie-feld);border-radius:12px;background:var(--papier)}
+.seite-nr{flex:0 0 22px;height:22px;border-radius:50%;display:grid;place-items:center;
+  background:var(--band);font-size:11.5px;font-weight:700;font-family:var(--mono)}
+.seite-bild{flex:0 0 42px;width:42px;height:54px;object-fit:cover;border-radius:6px;
+  border:1px solid var(--linie-feld);background:var(--band)}
+.seite-bild.pdf{display:grid;place-items:center;color:var(--tinte-2)}
+.seite-name{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seite-akt{display:flex;gap:2px}
+.seite-akt .iconbtn{padding:4px 8px;min-width:30px}
+.seite-akt .iconbtn[disabled]{opacity:.3;cursor:default}
+</style>
