@@ -1,4 +1,4 @@
-<script>window.__fpStand = "01.10.2026 09:35";</script>
+<script>window.__fpStand = "01.10.2026 Belegscanner (Paket A)";</script>
 <script>
 (function () {
 'use strict';
@@ -879,13 +879,20 @@ async function datei(docId) {
   return new Blob([puffer], { type: antwort.mime || 'application/octet-stream' });
 }
 
+/* Dieselbe Grenze wie auf dem Server (MAX_BYTES). Hier vorab geprueft, damit
+   statt einer unverstaendlichen Apps-Script-Meldung ein klarer Satz kommt. */
+const MAX_BELEG_BYTES = 25 * 1024 * 1024;
+const ZU_GROSS = 'Das Dokument ist zu groß. Bitte weniger Seiten scannen oder die Scanqualität reduzieren.';
+
 /** Legt eine Datei ab und liefert den fertigen Dokumenteintrag. */
-async function belegAblegen({ vehicleId, file, title, date, category }) {
+async function belegAblegen({ vehicleId, file, title, date, category, kiAuswerten }) {
   const klein = await verkleinereBild(file);
+  if (klein.size > MAX_BELEG_BYTES) throw new Error(ZU_GROSS);
   const base64 = await alsBase64(klein);
   const dok = await rufeAngemeldet('ladeBelegHoch', {
     vehicleId, base64, mime: klein.type, name: klein.name,
-    title: title || klein.name, date: date || '', category: category || 'Beleg'
+    title: title || klein.name, date: date || '', category: category || 'Beleg',
+    kiAuswerten: !!kiAuswerten
   });
   // Dieser Weg geht an put() vorbei – der Zwischenspeicher muss den Eintrag
   // trotzdem kennen, sonst fehlt der Beleg bis zum naechsten Neuladen.
@@ -1014,6 +1021,26 @@ async function analysiereMitGemini(dateien, onStatus) {
 
   if (onStatus) onStatus('');
   return erkannt || {};
+}
+
+/**
+ * Liest einen gespeicherten Beleg aus - der Server holt ihn selbst aus Drive.
+ *
+ * Wirft nicht, wenn nur die Erkennung scheitert: Dann kommt { fehler }
+ * zurueck, und der Beleg bleibt, wie er ist. Nur eine abgelaufene Anmeldung
+ * geht als Fehler weiter, damit die App zur Anmeldung zurueckkehrt.
+ *
+ * @returns {Promise<{dok: object|null, ergebnis: object|null, fehler: string|null}>}
+ */
+async function kiAuslesen(docId) {
+  try {
+    const antwort = await rufeAngemeldet('liesBelegAus', { id: docId });
+    if (antwort && antwort.dok) uebernimmSatz('docs', antwort.dok);
+    return antwort || { dok: null, ergebnis: null, fehler: 'Keine Antwort.' };
+  } catch (e) {
+    if (istAbgemeldet(e)) throw e;
+    return { dok: null, ergebnis: null, fehler: e.message || 'Fehler' };
+  }
 }
 
 /* ===== document-analysis ===== */
@@ -2319,14 +2346,22 @@ function fahrzeugAblage(v, meine) {
   return blk;
 }
 
+/* Stand der KI-Auswertung, wie er in der Zeile erscheint. "fertig" und
+   "nie angefordert" brauchen keinen Hinweis. */
+const KI_TEXT = { ausstehend: 'KI: noch nicht ausgelesen', fehlgeschlagen: 'KI: Auswertung fehlgeschlagen' };
+
 function dokZeile(d, gruppe) {
+  const kiOffen = d.driveId && KI_TEXT[d.kiStatus];
   return el('div', { class: 'dok-zeile' + (gruppe ? ' neu' : '') },
     el('span', { class: 'dok-art' }, gruppe || kategorieVon(d)),
     el('button', { class: 'dok-titel', title: 'Öffnen', onclick: () => openDoc(d.id) },
       el('span', { class: 'dok-name' }, d.title || d.name || 'Dokument'),
       el('span', { class: 'dok-meta' },
         [d.date ? fmtD(d.date) : null,
-          d.size ? Math.round(d.size / 1024) + ' KB' : null].filter(Boolean).join(' · '))),
+          d.size ? Math.round(d.size / 1024) + ' KB' : null,
+          kiOffen ? KI_TEXT[d.kiStatus] : null].filter(Boolean).join(' · '))),
+    kiOffen ? el('button', { class: 'iconbtn', title: d.kiFehler || '',
+      onclick: () => erneutAuslesen(d.id) }, 'Erneut mit KI auslesen') : null,
     el('button', { class: 'iconbtn', onclick: () => docModal(d) }, 'Bearbeiten'));
 }
 function docModal(dd, vehicleId, kategorie) {
@@ -2353,6 +2388,11 @@ function docModal(dd, vehicleId, kategorie) {
     f('Titel', 'title', e.title, 'text', 'z. B. Zulassungsbescheinigung Teil I'),
     fileField,
     f('Notiz', 'note', e.note, 'textarea'),
+    // Auch aeltere Belege lassen sich nachtraeglich auslesen - die Datei
+    // liegt ja schon in Drive.
+    (dd && dd.driveId) ? el('div', {},
+      el('button', { class: 'btn ghost sm', type: 'button',
+        onclick: () => erneutAuslesen(dd.id) }, iconMit('lupe', ' Gespeicherten Beleg mit KI auslesen'))) : null,
     dd ? el('div', { class: 'loeschzeile' },
       el('button', { class: 'btn ghost del',
         onclick: () => confirmDel('docs', e.id, 'Dieses Dokument löschen?') },
@@ -4742,7 +4782,7 @@ function passenderTermin(vehicleId, art) {
 
 // Welches Fahrzeug ist gemeint? Kennzeichen schlaegt Modellhinweis, sonst das
 // aktuell gewaehlte bzw. das einzige vorhandene.
-function fahrzeugRaten(r) {
+function fahrzeugRaten(r, ersatzId) {
   if (r.plate) {
     const p = norm(r.plate);
     const treffer = S.vehicles.find(v => v.plate && norm(v.plate) === p);
@@ -4753,26 +4793,35 @@ function fahrzeugRaten(r) {
     const treffer = S.vehicles.find(v => (v.model && norm(v.model).includes(h)) || (v.name && h.includes(norm(v.name))));
     if (treffer) return treffer;
   }
+  // Der Beleg ist schon einem Fahrzeug zugeordnet - das gilt, solange das
+  // Kennzeichen nichts anderes sagt.
+  if (ersatzId && vehById(ersatzId)) return vehById(ersatzId);
   if (curVeh !== 'all') return S.vehicles.find(v => v.id === curVeh) || S.vehicles[0];
   return S.vehicles[0];
 }
 
 /**
- * Beleg scannen: Seiten sammeln, ordnen, zu einem PDF machen, auslesen.
+ * Beleg scannen: Seiten sammeln, ordnen, zu einem PDF machen, SPEICHERN -
+ * und erst danach auslesen lassen.
  *
  * Eine Werkstattrechnung hat selten nur eine Seite. Bisher nahm die App genau
  * eine Datei entgegen; wer drei Seiten hatte, bekam drei Eintraege in der
  * Ablage und wusste spaeter nicht mehr, welche zusammengehoeren. Jetzt
  * entsteht ein PDF mit sprechendem Namen.
+ *
+ * Gespeichert wird vor der Erkennung: Frueher lag der Scan bis zum Klick auf
+ * "Eintragen" nur im Browser. Wer den Dialog schloss oder dessen Handy die
+ * Seite im Hintergrund beendete, hatte nichts. Die Erkennung ist jetzt ein
+ * nachgelagerter Schritt - faellt sie aus, bleibt der Beleg trotzdem da.
  */
 async function belegScannen() {
   if (!S.vehicles.length) { toast('Lege zuerst ein Fahrzeug an.'); return; }
-  if (!await verfuegbar()) {
-    toast('Bitte zuerst einen Schlüssel für die Belegerkennung hinterlegen.');
-    return;
-  }
+  // Ohne Schluessel wird trotzdem gescannt und gespeichert - nur das
+  // Auslesen entfaellt, die Angaben traegt man dann selbst ein.
+  const mitKI = await verfuegbar();
 
   const zaehler = el('span', { class: 'mini' });
+  const fahrzeugFeld = vehPick(curVeh !== 'all' ? curVeh : S.vehicles[0].id);
 
   // Der Knopf muss VOR der Seitensammlung entstehen: Die ruft beim Aufbau
   // sofort beiAenderung() auf, und ein const, das noch nicht zugewiesen ist,
@@ -4780,13 +4829,22 @@ async function belegScannen() {
   // der Knopf "Beleg scannen" tat dann schlicht nichts.
   const weiter = el('button', { class: 'btn', disabled: 'disabled', onclick: async () => {
     weiter.disabled = true;
+    // Der Dialog mit den gesammelten Seiten wird gleich durch die
+    // Fortschrittsanzeige ersetzt. Scheitert etwas VOR dem Speichern, kommt
+    // er unveraendert zurueck - die Seiten muessen nicht neu fotografiert
+    // werden.
+    const mod = $('#modal');
+    const vorher = [...mod.childNodes];
     try {
-      await verarbeiten(sammler.seiten());
+      await verarbeiten(sammler.seiten(), fahrzeugFeld.querySelector('select').value, mitKI);
     } catch (e) {
+      mod.innerHTML = '';
+      mod.append(...vorher);
+      $('#overlay').classList.add('show');
       weiter.disabled = false;
-      toast('Nicht möglich: ' + (e.message || 'Fehler'));
+      toast(e.message || 'Fehler');
     }
-  } }, 'Auslesen');
+  } }, mitKI ? 'Speichern & auslesen' : 'Speichern');
 
   const sammler = seitenFeld({
     hinweis: 'Noch keine Seite. Fotografiere den Beleg oder wähle Dateien – '
@@ -4798,48 +4856,79 @@ async function belegScannen() {
   });
 
   modal('Beleg scannen', [
+    fahrzeugFeld,
     sammler.feld,
     el('p', { class: 'dialog-hinweis' },
-      'Die Reihenfolge der Seiten bestimmt die Reihenfolge im PDF. '
-      + 'Ausgelesen wird die erste Seite – dort steht auf einer Rechnung, worauf es ankommt.')
+      'Die Reihenfolge der Seiten bestimmt die Reihenfolge im PDF. Der Beleg wird '
+      + 'zuerst in der Ablage gespeichert. '
+      + (mitKI ? 'Danach liest die KI alle Seiten aus – du prüfst das Ergebnis, bevor etwas eingetragen wird.'
+               : 'Für das automatische Auslesen ist kein Schlüssel hinterlegt – die Angaben trägst du selbst ein.'))
   ], async () => {}, { knoepfe: [zaehler,
     el('button', { class: 'btn ghost', onclick: closeModal }, 'Abbrechen'), weiter] });
 }
 
 /**
- * Liest die erste Seite aus und baut daraus das PDF.
+ * PDF bauen, speichern, dann auslesen.
  *
- * Ausgelesen wird bewusst nur die erste Seite: Auf einer Rechnung stehen
- * Datum, Betrag und Werkstatt im Kopf, und jede weitere Seite waere ein
- * weiterer Aufruf beim Erkennungsdienst - also Wartezeit und Geld.
+ * Wirft nur, solange noch nichts gespeichert ist - dann bekommt der Aufrufer
+ * die Seiten zurueck. Ab dem Speichern geht nichts mehr verloren: Ein
+ * Fehler beim Auslesen fuehrt zum Pruefdialog mit leeren Feldern und einem
+ * Hinweis, nicht zu "Scan fehlgeschlagen".
  */
-async function verarbeiten(seiten) {
-  ladeAnzeige('Beleg wird gelesen …');
-  let r = {};
-  try {
-    // Alle Seiten, aber als verkleinerte Bilder: Bei einer mehrseitigen
-    // Rechnung steht die Summe am Ende, beim TUEV-Bericht stehen die
-    // Maengel auf Seite zwei. Das Roh-PDF zu schicken waere dagegen bei
-    // jedem Modellversuch ein Vielfaches an Daten.
-    const zumLesen = await seitenAlsBilder(seiten, { onStatus: t => ladeAnzeige(t) });
-    r = await analysiereMitGemini(zumLesen, t => ladeAnzeige(t));
-  } catch (e) {
-    // Das Erkennen darf den ganzen Vorgang nicht aufhalten - die Seiten sind
-    // ja da. Dann eben von Hand ausfuellen.
-    toast('Auslesen nicht möglich: ' + (e.message || 'Fehler') + ' – bitte selbst eintragen.');
-  }
-
+async function verarbeiten(seiten, vehicleId, mitKI) {
+  ladeAnzeige('Seiten werden zusammengefasst …');
   let pdf;
   try {
-    ladeAnzeige('Seiten werden zusammengefasst …');
-    pdf = await baueBelegPdf(seiten, belegName(r), t => ladeAnzeige(t));
+    pdf = await baueBelegPdf(seiten, belegName({ date: todayISO() }, 'Beleg'), t => ladeAnzeige(t));
   } catch (e) {
-    closeModal();
-    toast('PDF konnte nicht gebaut werden: ' + (e.message || 'Fehler'));
+    throw new Error('PDF konnte nicht gebaut werden: ' + (e.message || 'Fehler'));
+  }
+  if (pdf.size > MAX_BELEG_BYTES) throw new Error(ZU_GROSS);
+
+  ladeAnzeige('Beleg wird in der Ablage gespeichert …');
+  let dok;
+  try {
+    dok = await belegAblegen({
+      vehicleId, file: pdf, title: 'Gescannter Beleg', date: todayISO(),
+      category: 'Rechnung', kiAuswerten: mitKI
+    });
+  } catch (e) {
+    throw new Error('Speichern nicht möglich: ' + (e.message || 'Fehler'));
+  }
+  aktualisiere();
+
+  // --- Ab hier ist der Scan sicher in Drive. ---
+  let r = {}, hinweis = null;
+  if (mitKI) {
+    ladeAnzeige('Gespeichert. Die KI liest alle Seiten aus – das dauert einen Moment …');
+    const aus = await kiAuslesen(dok.id);
+    aktualisiere();   // sonst zeigt die Ablage noch den Stand vor dem Auslesen
+    if (aus.dok) dok = aus.dok;
+    if (aus.ergebnis) r = aus.ergebnis;
+    if (aus.fehler) hinweis = aus.fehler;
+  }
+  bestaetigen(dok, r, seiten.length, hinweis);
+}
+
+/**
+ * Einen gespeicherten Beleg erneut auslesen - ohne neu zu fotografieren.
+ * Der Server nimmt die Datei aus Drive.
+ */
+async function erneutAuslesen(docId) {
+  if (!await verfuegbar()) {
+    toast('Für das automatische Auslesen ist kein Schlüssel hinterlegt.');
     return;
   }
-
-  bestaetigen(pdf, r, seiten.length);
+  ladeAnzeige('Die KI liest den Beleg aus – das dauert einen Moment …');
+  const aus = await kiAuslesen(docId);
+  aktualisiere();
+  if (!aus.ergebnis) {
+    closeModal();
+    triggerRender();
+    toast('Auslesen nicht möglich: ' + (aus.fehler || 'Fehler') + ' Der Beleg bleibt gespeichert.');
+    return;
+  }
+  bestaetigen(aus.dok || await get('docs', docId), aus.ergebnis, null, null);
 }
 
 function ladeAnzeige(text) {
@@ -4852,8 +4941,18 @@ function ladeAnzeige(text) {
 }
 
 // Exportiert, damit der Pruefdialog ohne Dateiauswahl darstellbar ist.
-function bestaetigen(datei, r, seitenzahl) {
-  const fahrzeug = fahrzeugRaten(r);
+/**
+ * Pruefdialog fuer einen bereits gespeicherten Beleg.
+ *
+ * @param {object} dok Der gespeicherte Dokumenteintrag.
+ * @param {object} r Was die Erkennung gelesen hat - leer, wenn sie nicht lief.
+ * @param {number} [seitenzahl]
+ * @param {string} [hinweis] Warum die Erkennung nichts liefern konnte.
+ */
+function bestaetigen(dok, r, seitenzahl, hinweis) {
+  r = r || {};
+  const fahrzeug = fahrzeugRaten(r, dok.vehicleId);
+  const gelesen = Object.keys(r).length > 0;
   const mod = $('#modal');
   mod.innerHTML = '';
 
@@ -4865,7 +4964,8 @@ function bestaetigen(datei, r, seitenzahl) {
   });
 
   const fDatum = el('input', { type: 'date', value: r.date || todayISO() });
-  const fTitel = el('input', { type: 'text', value: r.title || datei.name.replace(/\.[^.]+$/, '') });
+  const fTitel = el('input', { type: 'text',
+    value: r.title || (dok.title && dok.title !== 'Gescannter Beleg' ? dok.title : '') });
   // Die Arten haengen an der Fahrzeugart – beim Camper gehoert "Ausbau" dazu.
   const fTyp = el('select');
   function typenFuellen(vehicleId) {
@@ -4880,15 +4980,31 @@ function bestaetigen(datei, r, seitenzahl) {
   }
   typenFuellen(fahrzeugWahl.value);
   fahrzeugWahl.addEventListener('change', () => typenFuellen(fahrzeugWahl.value));
-  const fBeschreibung = el('input', { type: 'text', value: r.desc || r.title || '' });
+  // Die einzelnen Arbeiten stehen bei mehrseitigen Rechnungen oft erst auf
+  // Seite zwei oder drei - sie fuellen die Beschreibung, wenn die KI keine
+  // Zusammenfassung geliefert hat.
+  const arbeiten = (r.workPerformed || []).filter(Boolean);
+  const fBeschreibung = el('input', { type: 'text',
+    value: r.desc || arbeiten.join(', ') || r.title || '' });
   const fKosten = el('input', { type: 'number', step: '0.01', value: r.cost != null ? r.cost : '' });
   const fKm = el('input', { type: 'number', value: r.km != null ? r.km : '' });
   const fWerkstatt = el('input', { type: 'text', value: r.shop || '' });
+  // Rechnungsnummer und Betraege haben kein eigenes Feld - in der Notiz
+  // sind sie spaeter auffindbar, etwa bei einer Garantiefrage.
+  const notizTeile = [];
+  if (r.invoiceNumber) notizTeile.push('Rechnung Nr. ' + r.invoiceNumber);
+  if (r.netAmount != null) notizTeile.push('Netto ' + eur(r.netAmount));
+  if (r.vatAmount != null) notizTeile.push('MwSt. ' + eur(r.vatAmount));
+  if (arbeiten.length > 1) notizTeile.push('Arbeiten: ' + arbeiten.join('; '));
   const fNotiz = el('textarea', { rows: '2', placeholder: 'Optional' });
+  fNotiz.value = notizTeile.join('\n');
 
   // Der Dateiname entsteht aus dem Erkannten: Datum zuerst, damit die Belege
   // in jeder Ordneransicht von selbst in zeitlicher Reihenfolge liegen.
-  const fDateiname = el('input', { type: 'text', value: datei.name });
+  // Aus dem Erkannten benennen - nur aus tatsaechlich Gelesenem. Ohne
+  // Ergebnis bleibt der vorlaeufige Name ("Datum Beleg.pdf").
+  const fDateiname = el('input', { type: 'text',
+    value: (r.date || r.shop || r.title) ? belegName(r) : (dok.name || belegName({}, 'Beleg')) });
   const nameNachziehen = () => {
     if (fDateiname.dataset.geaendert) return;   // von Hand geaendert: in Ruhe lassen
     fDateiname.value = belegName({
@@ -4936,7 +5052,11 @@ function bestaetigen(datei, r, seitenzahl) {
 
   const body = el('div', { class: 'body' },
     el('div', { style: 'font-size:13px;color:var(--muted)' },
-      'Aus dem Beleg gelesen. Bitte prüfen und bei Bedarf korrigieren oder ergänzen – erst mit „Eintragen" wird gespeichert.'),
+      gelesen
+        ? 'Der Beleg ist gespeichert. Diese Angaben hat die KI gelesen – bitte prüfen und bei Bedarf korrigieren. Mit „Eintragen" entsteht der Werkstatteintrag.'
+        : 'Der Beleg ist gespeichert. Trage die Angaben ein – mit „Eintragen" entsteht der Werkstatteintrag.'),
+    hinweis ? el('div', { class: 'filechip', style: 'color:var(--over)' },
+      hinweis + ' Wiederholen lässt sich das später in der Ablage mit „Erneut mit KI auslesen".') : null,
     feld('Fahrzeug', fahrzeugWahl),
     el('div', { class: 'row2' }, feld('Datum', fDatum), feld('Typ', fTyp)),
     feld('Titel', fTitel),
@@ -4949,7 +5069,7 @@ function bestaetigen(datei, r, seitenzahl) {
     feld('Notiz', fNotiz),
     el('div', { class: 'filechip' },
       (seitenzahl && seitenzahl > 1 ? seitenzahl + ' Seiten zu einem PDF zusammengefasst · ' : '')
-      + Math.max(1, Math.round(datei.size / 1024)) + ' KB'),
+      + Math.max(1, Math.round((+dok.size || 0) / 1024)) + ' KB · in der Ablage gespeichert'),
     el('div', { style: 'border-top:1px solid var(--line);padding-top:14px;display:grid;gap:14px' },
       el('div', { style: 'font-weight:700;font-size:13px' }, 'Wartung & Fälligkeit'),
       feld('Wartungsarten', fWartungen, 'Mehrere durch Komma trennen. Diese Termine werden angelegt oder aktualisiert.'),
@@ -4961,7 +5081,7 @@ function bestaetigen(datei, r, seitenzahl) {
   speichern.onclick = async () => {
     speichern.disabled = true;
     try {
-      await anlegen(datei, r, {
+      await anlegen(dok, r, {
         vehicleId: fahrzeugWahl.value,
         date: fDatum.value || todayISO(),
         type: fTyp.value,
@@ -4985,35 +5105,30 @@ function bestaetigen(datei, r, seitenzahl) {
     }
   };
 
+  // Schliessen verwirft nichts: Der Beleg liegt schon in der Ablage.
+  const spaeter = () => { closeModal(); triggerRender(); toast('Der Beleg liegt in der Ablage.'); };
   mod.append(
-    el('header', {}, el('h3', {}, 'Beleg übernehmen'), el('button', { class: 'x', onclick: closeModal }, '×')),
+    el('header', {}, el('h3', {}, 'Beleg übernehmen'), el('button', { class: 'x', onclick: spaeter }, '×')),
     body,
-    el('footer', {}, el('button', { class: 'btn ghost', onclick: closeModal }, 'Abbrechen'), speichern));
+    el('footer', {}, el('button', { class: 'btn ghost', onclick: spaeter }, 'Nur Beleg behalten'), speichern));
   $('#overlay').classList.add('show');
 }
 
 // Uebernimmt ausschliesslich die im Pruefdialog bestaetigten Werte – die
-// Rohdaten der KI dienen nur als Vorbelegung. Exportiert, damit der Ablauf
-// ohne Dateiauswahl-Dialog pruefbar ist.
-async function anlegen(datei, r, w) {
+// Rohdaten der KI dienen nur als Vorbelegung.
+async function anlegen(dok, r, w) {
   const angelegt = [];
 
-  // 1. Dokument mit der Datei – der Server legt sie in Drive ab und gibt den
-  //    fertigen Eintrag samt Kennung zurueck.
-  // Unter dem Namen aus dem Dialog ablegen, nicht unter dem der Rohdatei.
-  let abzulegen = datei;
-  if (w.dateiname && w.dateiname !== datei.name) {
-    const name = /\.pdf$/i.test(w.dateiname) || datei.type !== 'application/pdf'
-      ? w.dateiname : w.dateiname + '.pdf';
-    abzulegen = new File([datei], name, { type: datei.type });
-  }
-
-  const dok = await belegAblegen({
-    vehicleId: w.vehicleId, file: abzulegen,
-    title: w.title, date: w.date,
+  // 1. Der Beleg liegt schon in Drive - hier bekommt er nur die geprueften
+  //    Angaben. Ein geaenderter Name wird auf dem Server auch in Drive
+  //    nachgezogen.
+  let name = w.dateiname || dok.name;
+  if (name && dok.mime === 'application/pdf' && !/\.pdf$/i.test(name)) name += '.pdf';
+  const gespeichert = await put('docs', {
+    ...dok, vehicleId: w.vehicleId, title: w.title, date: w.date, name,
     category: w.category || r.category || 'Rechnung'
   });
-  const docId = dok.id;
+  const docId = gespeichert.id;
   angelegt.push('Dokument');
 
   // 2. Ereignis, mit dem Beleg verknuepft

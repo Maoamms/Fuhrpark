@@ -67,8 +67,12 @@ var TABELLEN = {
               'note', 'reported', 'updatedAt'],
   events:    ['id', 'vehicleId', 'date', 'type', 'desc', 'km', 'shop', 'cost',
               'note', 'docId', 'updatedAt'],
+  // kiStatus: '' (nie angefordert) | ausstehend | fertig | fehlgeschlagen.
+  // Die Auswertung ist ein eigener Schritt NACH dem Speichern - scheitert
+  // sie, bleibt der Beleg trotzdem liegen und laesst sich spaeter erneut
+  // auslesen. blatt_() haengt die neuen Spalten hinten an.
   docs:      ['id', 'vehicleId', 'category', 'title', 'date', 'name', 'mime',
-              'size', 'driveId', 'updatedAt'],
+              'size', 'driveId', 'updatedAt', 'kiStatus', 'kiFehler', 'kiVersuche'],
   fixcosts:  ['id', 'vehicleId', 'kind', 'amount', 'interval', 'date', 'note', 'updatedAt'],
   // docId: eine Notiz darf einen Beleg tragen – Foto vom Schaden, Angebot,
   // Schriftwechsel. blatt_() haengt die Spalte bei Bedarf hinten an.
@@ -847,7 +851,23 @@ function speichere(daten) {
     // Die Drive-Kennung eines Belegs vergibt nur der Server beim Hochladen.
     // Kaeme sie aus dem Browser, liesse sich ueber holeBeleg() jede Datei im
     // Drive des Eigentuemers abrufen.
-    if (name === 'docs') satz.driveId = alt ? alt.driveId : '';
+    if (name === 'docs') {
+      satz.driveId = alt ? alt.driveId : '';
+
+      // Den Stand der KI-Auswertung fuehrt nur der Server. Der Browser
+      // schickt beim Bearbeiten seine - womoeglich aeltere - Kopie mit.
+      satz.kiStatus = alt ? alt.kiStatus : '';
+      satz.kiFehler = alt ? alt.kiFehler : '';
+      satz.kiVersuche = alt ? alt.kiVersuche : '';
+
+      // Neuer Dateiname: auch in Drive umbenennen, sonst stimmen Ablage und
+      // Ordner nicht mehr ueberein. Scheitert das, bleibt der alte Name in
+      // Drive - der Eintrag wird trotzdem gespeichert.
+      if (alt && alt.driveId && satz.name && satz.name !== alt.name) {
+        try { DriveApp.getFileById(alt.driveId).setName(String(satz.name)); }
+        catch (e) { console.warn('Umbenennen in Drive nicht moeglich: ' + e.message); }
+      }
+    }
   }
 
   // Wird ein Termin bearbeitet – etwa weil die Wartung erledigt ist –, faengt
@@ -981,7 +1001,12 @@ function ladeBelegHoch(daten) {
     name: daten.name || datei.getName(),
     mime: daten.mime || datei.getMimeType(),
     size: bytes.length,
-    driveId: datei.getId()
+    driveId: datei.getId(),
+    // Der Scanner speichert zuerst und laesst danach auslesen. Bis dahin
+    // steht der Beleg als "ausstehend" in der Ablage.
+    kiStatus: daten.kiAuswerten ? 'ausstehend' : '',
+    kiFehler: '',
+    kiVersuche: 0
   });
 }
 
@@ -1010,9 +1035,11 @@ function holeBeleg(daten) {
  * den Skripteigenschaften, nie im Browser; eingetragen werden sie ueber
  * setzeClaudeSchluessel() bzw. setzeGeminiSchluessel() im Skripteditor.
  *
- * Liegen beide vor, liest Gemini und Claude springt ein, wenn Gemini nicht
- * weiterkommt – ueber ERKENNUNG auch andersherum. Ein Beleg geht immer nur an
- * einen der beiden, nie an beide gleichzeitig.
+ * Liegen beide vor, liest Gemini - ueber ERKENNUNG auch andersherum. Der
+ * zweite springt NUR ein, wenn das mit setzeErkennungAusweg(true)
+ * ausdruecklich erlaubt ist: Claude kostet Geld, und ein Gemini-Ausfall soll
+ * nicht stillschweigend Kosten erzeugen. Ohne Ausweg bleibt der Beleg
+ * gespeichert und laesst sich spaeter erneut auslesen.
  */
 function erkennungStand(daten) {
   // Auch diese Auskunft gibt es nur fuer Angemeldete. Sie verraet zwar nur,
@@ -1035,9 +1062,11 @@ function erkennungStand_() {
   var erster = (wunsch === 'claude' && claude) ? 'claude'
              : (wunsch === 'gemini' && gemini) ? 'gemini'
              : gemini ? 'gemini' : claude ? 'claude' : null;
+  var ausweg = props.getProperty('ERKENNUNG_AUSWEG') === 'ja';
   return {
-    claude: claude, gemini: gemini, aktiv: erster,
-    zweit: erster === 'claude' ? (gemini ? 'gemini' : null)
+    claude: claude, gemini: gemini, aktiv: erster, ausweg: ausweg,
+    zweit: !ausweg ? null
+         : erster === 'claude' ? (gemini ? 'gemini' : null)
          : erster === 'gemini' ? (claude ? 'claude' : null) : null
   };
 }
@@ -1057,7 +1086,11 @@ var BELEG_AUFTRAG =
   'laesst du weg – rate nichts. Datumsangaben als JJJJ-MM-TT; steht nur '
   + 'ein Monat da, dann als JJJJ-MM. Es koennen mehrere Seiten desselben '
   + 'Belegs sein - dann gilt alles zusammen, und der Gesamtbetrag steht '
-  + 'meist auf der letzten.';
+  + 'meist auf der letzten. Kilometerstand, Datum, Betraege, '
+  + 'Rechnungsnummer, naechster Termin und Kennzeichen nur angeben, wenn '
+  + 'sie ausdruecklich auf dem Beleg stehen - nie aus anderen Angaben '
+  + 'errechnen oder schaetzen. Ausgefuehrte Arbeiten von ALLEN Seiten '
+  + 'erfassen, je Arbeit ein Eintrag.';
 
 var GEMINI_SCHEMA = {
   type: 'OBJECT',
@@ -1075,7 +1108,15 @@ var GEMINI_SCHEMA = {
                 + 'Steht nur ein Monat da - bei der HU die Regel, etwa "Januar 2027" -, '
                 + 'dann als JJJJ-MM angeben. Nicht raten.' },
     maintenanceKinds: { type: 'ARRAY', items: { type: 'STRING' },
-                        description: 'Welche Wartungen erledigt wurden, z. B. Ölwechsel' }
+                        description: 'Welche Wartungen erledigt wurden, z. B. Ölwechsel' },
+    // Neu. Jedes Feld hat in der App einen Platz: Rechnungsnummer und
+    // Betraege landen in der Notiz, die Arbeiten in der Beschreibung.
+    invoiceNumber: { type: 'STRING', description: 'Rechnungsnummer, genau wie auf dem Beleg' },
+    netAmount:     { type: 'NUMBER', description: 'Nettobetrag in Euro, falls ausgewiesen' },
+    vatAmount:     { type: 'NUMBER', description: 'Mehrwertsteuer in Euro, falls ausgewiesen' },
+    workPerformed: { type: 'ARRAY', items: { type: 'STRING' },
+                     description: 'Ausgefuehrte Arbeiten von allen Seiten, je Arbeit ein Eintrag, '
+                       + 'z. B. "Zahnriemen erneuert"' }
   }
 };
 
@@ -1101,6 +1142,14 @@ var CLAUDE_SCHEMA = (function () {
  */
 function erkenneBeleg(daten) {
   profilAusToken_(daten.token);
+  return erkenneMitAnbietern_(daten);
+}
+
+/**
+ * Fragt den eingestellten Dienst. Den zweiten nur, wenn der Ausweg
+ * ausdruecklich erlaubt ist (siehe erkennungStand_).
+ */
+function erkenneMitAnbietern_(daten) {
   var stand = erkennungStand_();
   if (!stand.aktiv) {
     throw new Error('Kein Schluessel fuer die Belegerkennung hinterlegt. Siehe Einrichtung.');
@@ -1115,6 +1164,7 @@ function erkenneBeleg(daten) {
     // Ausweg, wenn der erste ueberlastet ist oder das Guthaben fehlt.
     // Gibt es keinen, bleibt der urspruengliche Fehler.
     if (!stand.zweit) throw e;
+    console.warn('Erkennung mit ' + stand.aktiv + ' gescheitert, versuche ' + stand.zweit + ': ' + e.message);
     return lese(stand.zweit);
   }
   // "Nicht weitergekommen" heisst nicht nur "Fehler": Ein Beleg, von dem nichts
@@ -1127,6 +1177,60 @@ function erkenneBeleg(daten) {
     } catch (e2) {}
   }
   return erstes;
+}
+
+/*
+ * Gemini nimmt eingebettete Dateien nur bis etwa 20 MB je Anfrage an - und
+ * das als Base64, also um ein Drittel aufgeblaeht. Darueber ist die Antwort
+ * immer ein Fehler; besser vorher sagen, woran es liegt.
+ */
+var KI_MAX_BYTES = 14 * 1024 * 1024;
+
+/**
+ * Liest einen bereits gespeicherten Beleg aus - direkt aus Drive, ohne dass
+ * der Browser die Datei noch einmal schicken muss.
+ *
+ * Wirft nur, wenn der Zugriff nicht stimmt. Scheitert die Erkennung, kommt
+ * { fehler } zurueck und der Beleg bleibt, wie er ist: Er ist gespeichert,
+ * nur eben noch nicht ausgelesen.
+ *
+ * @returns {{dok: object, ergebnis: object|null, fehler: string|null}}
+ */
+function liesBelegAus(daten) {
+  var profil = profilAusToken_(daten.token);
+  var dok = lies_('docs').filter(function (d) { return d.id === daten.id; })[0];
+  if (!dok) throw new Error('Beleg nicht gefunden.');
+  if (!gehoertMir_(profil, dok.vehicleId)) throw new Error('Kein Zugriff auf diesen Beleg.');
+  if (!dok.driveId) throw new Error('Zu diesem Eintrag gibt es keine Datei.');
+
+  if (!erkennungStand_().aktiv) {
+    return { dok: dok, ergebnis: null,
+             fehler: 'Für die automatische Auswertung ist kein Schlüssel hinterlegt.' };
+  }
+
+  var ergebnis = null, fehler = null;
+  try {
+    var blob = DriveApp.getFileById(dok.driveId).getBlob();
+    var mime = blob.getContentType() || dok.mime || '';
+    var bytes = blob.getBytes();
+    if (!/^(application\/pdf|image\/)/.test(mime)) {
+      throw new Error('Diese Dateiart (' + mime + ') kann die automatische Auswertung nicht lesen.');
+    }
+    if (bytes.length > KI_MAX_BYTES) {
+      throw new Error('Das Dokument ist für die automatische Auswertung zu groß (über '
+        + Math.round(KI_MAX_BYTES / 1024 / 1024) + ' MB). Es bleibt gespeichert.');
+    }
+    ergebnis = erkenneMitAnbietern_({ seiten: [{ base64: Utilities.base64Encode(bytes), mime: mime }] });
+  } catch (e) {
+    fehler = e.message || String(e);
+    console.error('Auslesen von Beleg ' + dok.id + ' gescheitert: ' + fehler);
+  }
+
+  dok.kiStatus = fehler ? 'fehlgeschlagen' : 'fertig';
+  dok.kiFehler = fehler || '';
+  dok.kiVersuche = (Number(dok.kiVersuche) || 0) + 1;
+  schreibe_('docs', dok);
+  return { dok: dok, ergebnis: ergebnis, fehler: fehler };
 }
 
 /** Wie viele der Felder gefuellt sind, auf die es beim Uebernehmen ankommt. */
@@ -1228,50 +1332,125 @@ function erkenneMitGemini_(daten) {
   };
 
   var modelle = geminiModelle_();
-  var letzterCode = 0;
-  var letzterGrund = '';
+  var beginn = Date.now();
+  var letzter = null;
+  var alleUnbekannt = true;
 
   for (var i = 0; i < modelle.length; i++) {
-    // Nur beim letzten Modell lohnt das Warten - vorher ist der Wechsel
-    // auf das naechste schneller als jede Pause.
-    var wartezeiten = (i === modelle.length - 1) ? [1000, 3000] : [];
-    var antwort = holeMitGeduld_(
-      'https://generativelanguage.googleapis.com/v1beta/models/' +
-      modelle[i] + ':generateContent', einstellungen, wartezeiten);
+    var adresse = 'https://generativelanguage.googleapis.com/v1beta/models/' +
+                  modelle[i] + ':generateContent';
+    for (var versuch = 0; ; versuch++) {
+      var antwort = UrlFetchApp.fetch(adresse, einstellungen);
+      var code = antwort.getResponseCode();
+      if (code === 200) {
+        var ergebnis = JSON.parse(antwort.getContentText());
+        var text = ergebnis.candidates && ergebnis.candidates[0] &&
+                   ergebnis.candidates[0].content.parts[0].text;
+        if (!text) throw new Error('Auf dem Beleg war nichts Verwertbares zu finden.');
+        return JSON.parse(text);
+      }
 
-    var code = antwort.getResponseCode();
-    if (code === 200) {
-      var ergebnis = JSON.parse(antwort.getContentText());
-      var text = ergebnis.candidates && ergebnis.candidates[0] &&
-                 ergebnis.candidates[0].content.parts[0].text;
-      if (!text) throw new Error('Auf dem Beleg war nichts Verwertbares zu finden.');
-      return JSON.parse(text);
+      letzter = geminiFehler_(antwort);
+      if (code !== 404) alleUnbekannt = false;
+      // Googles eigene Begruendung gehoert ins Protokoll, nicht vor den Nutzer.
+      console.warn('Gemini ' + modelle[i] + ', Versuch ' + (versuch + 1) + ': ' + code +
+                   (letzter.status ? ' ' + letzter.status : '') +
+                   (letzter.grund ? ' - ' + letzter.grund : ''));
+
+      // Am Modell liegt es bei "gibt es nicht" (404) und bei einem
+      // erschoepften Tageskontingent - jedes Modell hat sein eigenes. Dann
+      // gleich das naechste, Warten hilft nicht.
+      if (code === 404 || letzter.tageskontingent) break;
+
+      // 400, 401, 403: Schluessel, Gesuch oder Schema stimmen nicht. Das
+      // waere bei jedem Modell und jedem Versuch genauso - aufhoeren.
+      if (VORUEBERGEHEND.indexOf(code) === -1) throw new Error(geminiMeldung_(letzter));
+
+      // Voruebergehend. Vor dem letzten Modell ist der Wechsel schneller als
+      // jede Pause; beim letzten wird mit wachsendem Abstand wiederholt.
+      if (i < modelle.length - 1) break;
+      var warte = wartezeit_(versuch, letzter.warteMs);
+      if (warte === null || Date.now() - beginn + warte > GEMINI_ZEITRAHMEN_MS) break;
+      Utilities.sleep(warte);
     }
-
-    letzterCode = code;
-    letzterGrund = '';
-    try { letzterGrund = JSON.parse(antwort.getContentText()).error.message; } catch (e) {}
-
-    // Weiterprobieren lohnt bei allem, was AM MODELL liegt: Ueberlastung
-    // (503) genauso wie "gibt es nicht" (404) - Google benennt seine
-    // Modelle immer wieder um. Ein falscher Schluessel (403) oder ein
-    // falsch gestelltes Gesuch (400) waere beim naechsten Modell genauso
-    // falsch; dann gleich aufhoeren.
-    if (code !== 404 && VORUEBERGEHEND.indexOf(code) === -1) break;
   }
 
-  if (letzterCode === 404) {
+  if (alleUnbekannt) {
     throw new Error('Keines der eingestellten Modelle gibt es: ' + modelle.join(', ') +
                     '. Im Skripteditor pruefeGemini() ausführen – es listet die ' +
                     'verfügbaren auf. Die gewünschten dann als Skripteigenschaft ' +
                     'GEMINI_MODELLE eintragen, durch Komma getrennt.');
   }
-  if (VORUEBERGEHEND.indexOf(letzterCode) >= 0) {
-    throw new Error('Gemini ist gerade überlastet (Fehler ' + letzterCode + '; ' +
-                    modelle.length + ' Modelle versucht). Das liegt nicht an dir.');
+  throw new Error(geminiMeldung_(letzter));
+}
+
+/*
+ * Wiederholen bei voruebergehenden Stoerungen: etwa 2, 4, 8 Sekunden, mit
+ * etwas Zufall, damit nicht mehrere Aufrufe im Gleichschritt wiederkommen.
+ * Insgesamt nicht laenger als eine Minute - davor sitzt ein Mensch.
+ */
+var GEMINI_WARTEN_MS = [2000, 4000, 8000];
+var GEMINI_ZEITRAHMEN_MS = 60000;
+
+/** Wartezeit vor dem naechsten Versuch, oder null, wenn es keinen mehr gibt. */
+function wartezeit_(versuch, vorgabeMs) {
+  if (versuch >= GEMINI_WARTEN_MS.length) return null;
+  // Nennt Google selbst eine Wartezeit, gilt die - aber nicht ueber 20 s.
+  if (vorgabeMs !== null && vorgabeMs !== undefined) return vorgabeMs > 20000 ? null : vorgabeMs;
+  return Math.round(GEMINI_WARTEN_MS[versuch] * (1 + Math.random() * 0.25));
+}
+
+/**
+ * Was hinter einer Fehlerantwort steckt.
+ *
+ * 429 ist nicht gleich 429: Ein Minutenlimit ist nach Sekunden vorbei, ein
+ * aufgebrauchtes Tageskontingent erst morgen. Google schreibt das in die
+ * Einzelheiten der Antwort (QuotaFailure, RetryInfo).
+ */
+function geminiFehler_(antwort) {
+  var f = { code: antwort.getResponseCode(), status: '', grund: '',
+            tageskontingent: false, warteMs: null };
+  var fehler = null;
+  try { fehler = JSON.parse(antwort.getContentText()).error; } catch (e) {}
+  if (!fehler) return f;
+  f.status = fehler.status || '';
+  f.grund = fehler.message || '';
+  (fehler.details || []).forEach(function (d) {
+    var typ = String(d['@type'] || '');
+    if (/RetryInfo$/.test(typ) && d.retryDelay) {
+      var sek = parseFloat(String(d.retryDelay));
+      if (!isNaN(sek)) f.warteMs = Math.round(sek * 1000);
+    }
+    if (/QuotaFailure$/.test(typ)) {
+      (d.violations || []).forEach(function (v) {
+        if (/PerDay/i.test(String(v.quotaId || ''))) f.tageskontingent = true;
+      });
+    }
+  });
+  if (f.code === 429 && /per day|daily/i.test(f.grund)) f.tageskontingent = true;
+  return f;
+}
+
+/** Verstaendliche Meldung - der genaue Grund steht im Protokoll. */
+function geminiMeldung_(f) {
+  if (!f) return 'Gemini antwortet nicht.';
+  if (f.code === 429 && f.tageskontingent) {
+    return 'Das Tageskontingent der automatischen Auswertung ist aufgebraucht. '
+         + 'Bitte morgen erneut auslesen.';
   }
-  throw new Error('Gemini antwortet nicht (Fehler ' + letzterCode +
-                  (letzterGrund ? ': ' + letzterGrund : '') + ').');
+  if (f.code === 429) {
+    return 'Die automatische Auswertung nimmt gerade keine weiteren Anfragen an '
+         + '(Anfragelimit). Bitte in einigen Minuten erneut versuchen.';
+  }
+  if (VORUEBERGEHEND.indexOf(f.code) >= 0) {
+    return 'Die automatische Auswertung ist momentan nicht verfügbar (Gemini, Fehler '
+         + f.code + '). Bitte später erneut versuchen.';
+  }
+  if (f.code === 401 || f.code === 403 || /api key/i.test(f.grund)) {
+    return 'Der Gemini-Schlüssel wird abgelehnt (Fehler ' + f.code + '). '
+         + 'Im Skripteditor pruefeGemini() ausführen.';
+  }
+  return 'Gemini lehnt die Anfrage ab (Fehler ' + f.code + (f.grund ? ': ' + f.grund : '') + ').';
 }
 
 /**
@@ -1841,6 +2020,27 @@ function setzeErkennung(welche) {
     : 'Eingestellt – es fehlt aber noch der passende Schlüssel.';
 }
 
+/**
+ * Darf der zweite Dienst einspringen, wenn der erste scheitert?
+ *
+ * Standard ist nein: Claude kostet je Beleg Geld, und ein Gemini-Ausfall
+ * soll das nicht unbemerkt ausloesen. Der Beleg bleibt ohnehin gespeichert
+ * und laesst sich spaeter erneut auslesen.
+ *
+ *     setzeErkennungAusweg(true)   // erlauben
+ *     setzeErkennungAusweg(false)  // wieder abschalten
+ */
+function setzeErkennungAusweg(erlaubt) {
+  nurImEditor_();
+  var props = eigenschaften_();
+  if (erlaubt === true) props.setProperty('ERKENNUNG_AUSWEG', 'ja');
+  else props.deleteProperty('ERKENNUNG_AUSWEG');
+  var stand = erkennungStand_();
+  return stand.zweit
+    ? 'Ausweg erlaubt: Scheitert ' + stand.aktiv + ', liest ' + stand.zweit + '.'
+    : 'Kein Ausweg: Scheitert die Erkennung, bleibt der Beleg gespeichert und wird spaeter erneut ausgelesen.';
+}
+
 /** Ein anderes Claude-Modell, falls das voreingestellte nicht passt. */
 function setzeClaudeModell(modell) {
   nurImEditor_();
@@ -1971,6 +2171,7 @@ function zeigeEinrichtung() {
     'Claude:         ' + (props.getProperty('CLAUDE_KEY') ? 'hinterlegt' : 'nicht hinterlegt'),
     'Gemini:         ' + (props.getProperty('GEMINI_KEY') ? 'hinterlegt' : 'nicht hinterlegt'),
     'Belege liest:   ' + (erkennungStand_().aktiv || 'niemand'),
+    'Ausweg:         ' + (erkennungStand_().zweit || 'keiner (setzeErkennungAusweg)'),
     'Profile:        ' + profile.length
   ];
   profile.forEach(function (p) {
