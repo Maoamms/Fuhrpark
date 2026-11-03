@@ -1,4 +1,4 @@
-<script>window.__fpStand = "01.10.2026 Prüfung vor Testphase";</script>
+<script>window.__fpStand = "03.11.2026 KI-Schutz";</script>
 <script>
 (function () {
 'use strict';
@@ -983,14 +983,14 @@ const KI_MAX_BYTES = 14 * 1024 * 1024;
 const ZU_GROSS = 'Das Dokument ist zu groß. Bitte weniger Seiten scannen oder die Scanqualität reduzieren.';
 
 /** Legt eine Datei ab und liefert den fertigen Dokumenteintrag. */
-async function belegAblegen({ vehicleId, file, title, date, category, kiAuswerten }) {
+async function belegAblegen({ vehicleId, file, title, date, category, kiAuswerten, kiSperre }) {
   const klein = await verkleinereBild(file);
   if (klein.size > MAX_BELEG_BYTES) throw new Error(ZU_GROSS);
   const base64 = await alsBase64(klein);
   const dok = await rufeAngemeldet('ladeBelegHoch', {
     vehicleId, base64, mime: klein.type, name: klein.name,
     title: title || klein.name, date: date || '', category: category || 'Beleg',
-    kiAuswerten: !!kiAuswerten
+    kiAuswerten: !!kiAuswerten, kiSperre: kiSperre ? 'ja' : ''
   });
   // Dieser Weg geht an put() vorbei – der Zwischenspeicher muss den Eintrag
   // trotzdem kennen, sonst fehlt der Beleg bis zum naechsten Neuladen.
@@ -1096,7 +1096,24 @@ const modellSetzen = async () => {};
  * ausdruecklich nur ein Vorschlag – die App zeigt es zur Kontrolle, bevor
  * etwas gespeichert wird.
  */
-async function analysiereMitGemini(dateien, onStatus) {
+/*
+ * Dokumentarten, die nie an die KI gehen - dieselbe Liste wie KI_GESCHUETZT
+ * in Code.gs. Durchgesetzt wird es dort; hier nur, damit die Knoepfe passen
+ * und gar nicht erst etwas uebertragen wird.
+ */
+const KI_GESCHUETZT = ['Fahrzeugschein (ZB I)', 'Fahrzeugbrief (ZB II)',
+  'Versicherungsnachweis', 'Kaufvertrag', 'Versicherung', 'Vertrag'];
+const kiGeschuetzt = (kategorie, sperre) =>
+  sperre === 'ja' || KI_GESCHUETZT.includes(String(kategorie || '').trim());
+
+/**
+ * @param {object} [schutz] { category, kiSperre } des Dokuments - der Server
+ *   lehnt geschuetzte Dokumente ab, bevor etwas an die KI geht.
+ */
+async function analysiereMitGemini(dateien, onStatus, schutz) {
+  if (schutz && kiGeschuetzt(schutz.category, schutz.kiSperre)) {
+    throw new Error('Dieses Dokument ist vor der KI geschützt.');
+  }
   const liste = Array.isArray(dateien) ? dateien : [dateien];
   if (onStatus) onStatus('Beleg wird vorbereitet …');
 
@@ -1123,7 +1140,8 @@ async function analysiereMitGemini(dateien, onStatus) {
   // base64/mime bleiben fuer aeltere Bereitstellungen dabei, die nur eine
   // Seite kennen; der Server nimmt "seiten", wenn er damit umgehen kann.
   const erkannt = await rufeAngemeldet('erkenneBeleg', {
-    seiten, base64: seiten[0].base64, mime: seiten[0].mime
+    seiten, base64: seiten[0].base64, mime: seiten[0].mime,
+    category: schutz ? schutz.category : '', kiSperre: schutz ? schutz.kiSperre : ''
   });
 
   if (onStatus) onStatus('');
@@ -1276,8 +1294,16 @@ function attachAnalyzer(fileField, getFile, opts) {
       // Mit hinterlegtem Schluessel liest die KI den Beleg; ohne Schluessel
       // oder wenn sie nicht erreichbar ist, greift die einfache Erkennung.
       let r, mitKI = false;
-      if (await verfuegbar()) {
-        try { r = await analysiereMitGemini(file, s => { status.textContent = s; }); mitKI = true; }
+      // Was im Dialog als Art gewaehlt ist, entscheidet: Ein Fahrzeugschein
+      // wird nur lokal im Browser gelesen, nie an die KI geschickt.
+      const schutz = {
+        category: (body.querySelector('[name="category"]') || {}).value || '',
+        kiSperre: (body.querySelector('[name="kiSperre"]') || {}).value || ''
+      };
+      const geschuetzt = kiGeschuetzt(schutz.category, schutz.kiSperre);
+      if (geschuetzt) status.textContent = 'Geschützt – wird nur hier im Browser gelesen, nicht an die KI geschickt …';
+      if (!geschuetzt && await verfuegbar()) {
+        try { r = await analysiereMitGemini(file, s => { status.textContent = s; }, schutz); mitKI = true; }
         catch (e) {
           status.textContent = 'KI nicht möglich (' + (e.message || 'Fehler') + ') – versuche einfache Erkennung …';
           r = await analyzeFile(file, s => { status.textContent = s; });
@@ -1296,7 +1322,7 @@ function attachAnalyzer(fileField, getFile, opts) {
         if (r.shop) { setIfEmpty(body, 'shop', r.shop); filled.push('Werkstatt'); }
         if (r.desc) { setIfEmpty(body, 'desc', r.desc); filled.push('Beschreibung'); }
       }
-      const quelle = mitKI ? 'KI' : 'einfache Erkennung';
+      const quelle = mitKI ? 'KI' : (geschuetzt ? 'nur lokal, geschützt' : 'einfache Erkennung');
       status.textContent = filled.length
         ? ('Erkannt (' + quelle + '): ' + filled.join(', ') + ' – bitte prüfen.')
         : ('Nichts Eindeutiges gefunden (' + quelle + ') – bitte manuell eintragen.');
@@ -2496,7 +2522,7 @@ function fahrzeugAblage(v, meine) {
 const KI_TEXT = { ausstehend: 'KI: noch nicht ausgelesen', fehlgeschlagen: 'KI: Auswertung fehlgeschlagen' };
 
 function dokZeile(d, gruppe) {
-  const kiOffen = d.driveId && KI_TEXT[d.kiStatus];
+  const kiOffen = d.driveId && KI_TEXT[d.kiStatus] && !kiGeschuetzt(d.category, d.kiSperre);
   return el('div', { class: 'dok-zeile' + (gruppe ? ' neu' : '') },
     el('span', { class: 'dok-art' }, gruppe || kategorieVon(d)),
     el('button', { class: 'dok-titel', title: 'Öffnen', onclick: () => openDoc(d.id) },
@@ -2522,6 +2548,28 @@ function docModal(dd, vehicleId, kategorie) {
   const chip = el('div', { class: 'filechip' }, e.name ? ('Aktuell: ' + e.name) : 'Keine Datei');
   fileField.append(chip);
   attachAnalyzer(fileField, () => pickedFile, { mode: 'doc' });
+
+  // Ob das Dokument an die KI darf. Fahrzeugschein & Co. sind ohnehin
+  // geschuetzt (KI_GESCHUETZT); hier laesst sich jedes weitere sperren.
+  const sperrWahl = el('select', { name: 'kiSperre' });
+  [['', 'Erlaubt (außer bei geschützten Papieren)'], ['ja', 'Nie an die KI senden']].forEach(([w, t]) => {
+    const o = el('option', { value: w }, t);
+    if ((e.kiSperre || '') === w) o.selected = true;
+    sperrWahl.append(o);
+  });
+  const sperrHinweis = el('p', { class: 'dialog-hinweis' });
+  const hinweisNachziehen = () => {
+    const kat = (document.querySelector('#modal [name="category"]') || {}).value;
+    sperrHinweis.textContent = KI_GESCHUETZT.includes(kat)
+      ? '„' + kat + '“ ist immer geschützt: Es wird nie an die KI übertragen.'
+      : 'Mit „Nie an die KI senden“ wird das Dokument nur gespeichert und höchstens hier im Browser gelesen.';
+  };
+  setTimeout(() => {
+    hinweisNachziehen();
+    const katFeld = document.querySelector('#modal [name="category"]');
+    if (katFeld) katFeld.addEventListener('change', hinweisNachziehen);
+  }, 0);
+
   modal(dd ? 'Dokument bearbeiten' : 'Dokument hinzufügen', [
     vehPick(e.vehicleId),
     row2(f('Datum', 'date', e.date, 'date'),
@@ -2532,12 +2580,21 @@ function docModal(dd, vehicleId, kategorie) {
           (e.category && !KATEGORIEN.includes(kategorieVon(e))) ? [e.category] : []))),
     f('Titel', 'title', e.title, 'text', 'z. B. Zulassungsbescheinigung Teil I'),
     fileField,
+    el('div', { class: 'field' }, el('label', {}, 'KI-Auswertung'), sperrWahl, sperrHinweis),
     f('Notiz', 'note', e.note, 'textarea'),
     // Auch aeltere Belege lassen sich nachtraeglich auslesen - die Datei
-    // liegt ja schon in Drive.
-    (dd && dd.driveId) ? el('div', {},
+    // liegt ja schon in Drive. Massgeblich ist, was gespeichert ist: Wer
+    // die Art gerade erst aendert, muss erst speichern.
+    (dd && dd.driveId && !kiGeschuetzt(dd.category, dd.kiSperre)) ? el('div', {},
       el('button', { class: 'btn ghost sm', type: 'button',
-        onclick: () => erneutAuslesen(dd.id) }, iconMit('lupe', ' Gespeicherten Beleg mit KI auslesen'))) : null,
+        onclick: () => {
+          const kat = (document.querySelector('#modal [name="category"]') || {}).value;
+          if (kiGeschuetzt(kat, sperrWahl.value)) {
+            toast('Geschützt – erst speichern, dann wird es gar nicht mehr angeboten.');
+            return;
+          }
+          return erneutAuslesen(dd.id);
+        } }, iconMit('lupe', ' Gespeicherten Beleg mit KI auslesen'))) : null,
     dd ? el('div', { class: 'loeschzeile' },
       el('button', { class: 'btn ghost del',
         onclick: () => confirmDel('docs', e.id, 'Dieses Dokument löschen?') },
@@ -2552,11 +2609,12 @@ function docModal(dd, vehicleId, kategorie) {
       toast('Beleg wird abgelegt …');
       const dok = await belegAblegen({
         vehicleId: rec.vehicleId, file: pickedFile,
-        title: rec.title, date: rec.date, category: rec.category
+        title: rec.title, date: rec.date, category: rec.category,
+        kiSperre: rec.kiSperre === 'ja'
       });
       // Die uebrigen Eingaben aus dem Dialog nachtragen
       await put('docs', { ...dok, title: rec.title || dok.title, date: rec.date,
-                          category: rec.category, note: rec.note });
+                          category: rec.category, note: rec.note, kiSperre: rec.kiSperre });
     } else {
       await put('docs', rec);
     }
@@ -4757,12 +4815,14 @@ function vSettings(m) {
         ? '✓ ' + name[k.aktiv] + ' liest die Belege' +
           (k.zweit ? ' – ' + name[k.zweit] + ' springt ein, wenn ' + name[k.aktiv] +
                      ' nicht weiterkommt' : '')
-        : '✕ Kein Schlüssel hinterlegt – Scannen nicht möglich';
+        : '✕ Kein Schlüssel hinterlegt – gescannt und gespeichert wird trotzdem, nur nicht ausgelesen';
       s.style.color = k.aktiv ? 'var(--ok)' : 'var(--over)';
     }
     if (t && k.aktiv) {
       t.textContent = 'Der Beleg wird zum Auslesen an ' + name[k.aktiv] +
-        ' übertragen. Der Zugangsschlüssel liegt auf dem Server, nicht in diesem Browser.';
+        ' übertragen. Der Zugangsschlüssel liegt auf dem Server, nicht in diesem Browser. '
+        + 'Nie übertragen werden: ' + KI_GESCHUETZT.slice(0, 4).join(', ')
+        + ' sowie jedes Dokument mit „Nie an die KI senden“.';
     }
   });
 
@@ -4977,6 +5037,14 @@ async function belegScannen() {
   const zaehler = el('span', { class: 'mini' });
   const fahrzeugFeld = vehPick(curVeh !== 'all' ? curVeh : S.vehicles[0].id);
 
+  // Fuer persoenliche Papiere: speichern ja, an die KI nein.
+  const sperre = el('input', { type: 'checkbox',
+    onchange: () => { weiter.textContent = sperre.checked || !mitKI ? 'Speichern' : 'Speichern & auslesen'; } });
+  const sperrZeile = el('label', { class: 'ki-sperre' }, sperre,
+    el('span', {}, 'Nicht an die KI senden',
+      el('small', {}, 'Für persönliche Papiere wie Fahrzeugschein, Kaufvertrag oder Ausweis. '
+        + 'Der Scan wird nur gespeichert.')));
+
   // Der Knopf muss VOR der Seitensammlung entstehen: Die ruft beim Aufbau
   // sofort beiAenderung() auf, und ein const, das noch nicht zugewiesen ist,
   // wirft beim Zugriff. In einer async-Funktion faellt das lautlos aus -
@@ -4990,7 +5058,8 @@ async function belegScannen() {
     const mod = $('#modal');
     const vorher = [...mod.childNodes];
     try {
-      await verarbeiten(sammler.seiten(), fahrzeugFeld.querySelector('select').value, mitKI);
+      await verarbeiten(sammler.seiten(), fahrzeugFeld.querySelector('select').value,
+        mitKI && !sperre.checked, sperre.checked);
     } catch (e) {
       mod.innerHTML = '';
       mod.append(...vorher);
@@ -5012,6 +5081,7 @@ async function belegScannen() {
   modal('Beleg scannen', [
     fahrzeugFeld,
     sammler.feld,
+    mitKI ? sperrZeile : null,
     el('p', { class: 'dialog-hinweis' },
       'Die Reihenfolge der Seiten bestimmt die Reihenfolge im PDF. Der Beleg wird '
       + 'zuerst in der Ablage gespeichert. '
@@ -5029,7 +5099,7 @@ async function belegScannen() {
  * Fehler beim Auslesen fuehrt zum Pruefdialog mit leeren Feldern und einem
  * Hinweis, nicht zu "Scan fehlgeschlagen".
  */
-async function verarbeiten(seiten, vehicleId, mitKI) {
+async function verarbeiten(seiten, vehicleId, mitKI, gesperrt) {
   ladeAnzeige('Seiten werden zusammengefasst …');
   let pdf;
   try {
@@ -5043,8 +5113,9 @@ async function verarbeiten(seiten, vehicleId, mitKI) {
   let dok;
   try {
     dok = await belegAblegen({
-      vehicleId, file: pdf, title: 'Gescannter Beleg', date: todayISO(),
-      category: 'Rechnung', kiAuswerten: mitKI
+      vehicleId, file: pdf, title: gesperrt ? 'Gescanntes Dokument' : 'Gescannter Beleg',
+      date: todayISO(), category: gesperrt ? 'Sonstiges' : 'Rechnung',
+      kiAuswerten: mitKI, kiSperre: gesperrt
     });
   } catch (e) {
     throw new Error('Speichern nicht möglich: ' + (e.message || 'Fehler'));
@@ -5052,6 +5123,14 @@ async function verarbeiten(seiten, vehicleId, mitKI) {
   aktualisiere();
 
   // --- Ab hier ist der Scan sicher in Drive. ---
+
+  // Gesperrt: kein Werkstatteintrag, sondern Art und Titel ergaenzen -
+  // ein Fahrzeugschein ist keine Rechnung.
+  if (gesperrt) {
+    toast('Gespeichert – nicht an die KI übertragen.');
+    docModal(dok);
+    return;
+  }
   let r = {}, hinweis = null;
   if (mitKI) {
     ladeAnzeige('Gespeichert. Die KI liest alle Seiten aus – das dauert einen Moment …');
@@ -5069,6 +5148,11 @@ async function verarbeiten(seiten, vehicleId, mitKI) {
  * Der Server nimmt die Datei aus Drive.
  */
 async function erneutAuslesen(docId) {
+  const gespeichert = await get('docs', docId);
+  if (gespeichert && kiGeschuetzt(gespeichert.category, gespeichert.kiSperre)) {
+    toast('Dieses Dokument ist vor der KI geschützt.');
+    return;
+  }
   if (!await verfuegbar()) {
     toast('Für das automatische Auslesen ist kein Schlüssel hinterlegt.');
     return;

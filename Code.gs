@@ -75,7 +75,9 @@ var TABELLEN = {
               'size', 'driveId', 'updatedAt', 'kiStatus', 'kiFehler', 'kiVersuche',
               // Der Dokument-Dialog hatte immer ein Notizfeld - gespeichert
               // wurde es nie, weil die Spalte fehlte.
-              'note'],
+              'note',
+              // kiSperre: 'ja' = dieses Dokument geht nie an die KI.
+              'kiSperre'],
   fixcosts:  ['id', 'vehicleId', 'kind', 'amount', 'interval', 'date', 'note', 'updatedAt'],
   // docId: eine Notiz darf einen Beleg tragen – Foto vom Schaden, Angebot,
   // Schriftwechsel. blatt_() haengt die Spalte bei Bedarf hinten an.
@@ -1076,7 +1078,8 @@ function ladeBelegHoch(daten) {
     driveId: datei.getId(),
     // Der Scanner speichert zuerst und laesst danach auslesen. Bis dahin
     // steht der Beleg als "ausstehend" in der Ablage.
-    kiStatus: daten.kiAuswerten ? 'ausstehend' : '',
+    kiStatus: (daten.kiAuswerten && !kiGeschuetzt_(daten.category, daten.kiSperre)) ? 'ausstehend' : '',
+    kiSperre: daten.kiSperre === 'ja' ? 'ja' : '',
     kiFehler: '',
     kiVersuche: 0
   });
@@ -1214,6 +1217,8 @@ var CLAUDE_SCHEMA = (function () {
  */
 function erkenneBeleg(daten) {
   profilAusToken_(daten.token);
+  // Die Oberflaeche schickt mit, als was das Dokument abgelegt werden soll.
+  if (kiGeschuetzt_(daten.category, daten.kiSperre)) throw new Error(KI_GESCHUETZT_MELDUNG);
   return erkenneMitAnbietern_(daten);
 }
 
@@ -1252,6 +1257,31 @@ function erkenneMitAnbietern_(daten) {
 }
 
 /*
+ * Dokumente, die NIE an die KI gehen.
+ *
+ * Fahrzeugschein, Fahrzeugbrief, Versicherungsnachweis und Kaufvertrag
+ * tragen Name, Anschrift und Fahrzeug-Identnummer - und muessen fuer die
+ * Wartung nicht ausgelesen werden. Die kostenlose Gemini-API darf Inhalte
+ * zur Verbesserung von Googles Produkten nutzen; solche Papiere sollen dort
+ * nicht versehentlich landen. Dazu kommt jedes Dokument, an dem "Nie an die
+ * KI senden" gewaehlt ist (kiSperre).
+ *
+ * Geprueft wird HIER, auf dem Server - nicht nur in der Oberflaeche. Die
+ * gleiche Liste steht in app.html (KI_GESCHUETZT) nur, um die Knoepfe
+ * passend anzuzeigen.
+ */
+var KI_GESCHUETZT = ['Fahrzeugschein (ZB I)', 'Fahrzeugbrief (ZB II)',
+                     'Versicherungsnachweis', 'Kaufvertrag',
+                     // alte Bezeichnungen derselben Papiere
+                     'Versicherung', 'Vertrag'];
+
+function kiGeschuetzt_(kategorie, sperre) {
+  return sperre === 'ja' || KI_GESCHUETZT.indexOf(String(kategorie || '').trim()) >= 0;
+}
+
+var KI_GESCHUETZT_MELDUNG = 'Dieses Dokument ist vor der KI geschützt und wird nicht übertragen.';
+
+/*
  * Gemini nimmt eingebettete Dateien nur bis etwa 20 MB je Anfrage an - und
  * das als Base64, also um ein Drittel aufgeblaeht. Darueber ist die Antwort
  * immer ein Fehler; besser vorher sagen, woran es liegt.
@@ -1274,6 +1304,11 @@ function liesBelegAus(daten) {
   if (!dok) throw new Error('Beleg nicht gefunden.');
   if (!gehoertMir_(profil, dok.vehicleId)) throw new Error('Kein Zugriff auf diesen Beleg.');
   if (!dok.driveId) throw new Error('Zu diesem Eintrag gibt es keine Datei.');
+
+  // Geschuetzt: gar nicht erst aus Drive lesen, nichts am Status aendern.
+  if (kiGeschuetzt_(dok.category, dok.kiSperre)) {
+    return { dok: dok, ergebnis: null, fehler: KI_GESCHUETZT_MELDUNG };
+  }
 
   if (!erkennungStand_().aktiv) {
     return { dok: dok, ergebnis: null,
