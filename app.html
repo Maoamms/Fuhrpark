@@ -1,4 +1,4 @@
-<script>window.__fpStand = "03.11.2026 KI-Schutz";</script>
+<script>window.__fpStand = "16.11.2026 Gesamtprüfung";</script>
 <script>
 (function () {
 'use strict';
@@ -2193,7 +2193,7 @@ function noteModal(n) {
   const zaehler = el('span', { class: 'mini' });
   const sammler = seitenFeld({
     hinweis: vorhandener
-      ? 'Neue Seiten ersetzen den bisherigen Beleg.'
+      ? 'Neue Seiten werden als neuer Beleg an die Notiz gehängt; der bisherige bleibt in der Ablage.'
       : 'Foto, Angebot, Schriftwechsel – mehrere Seiten werden zu einem PDF.',
     beiAenderung: anz => {
       zaehler.textContent = anz ? anz + (anz === 1 ? ' Seite' : ' Seiten') : '';
@@ -2909,7 +2909,9 @@ function suche(q) {
   });
 
   S.events.forEach(e => {
-    if (passt(e.desc, e.shop, e.type, e.note, e.cost)) {
+    // Betrag auch in deutscher Schreibweise: Wer "412,50" tippt, sucht
+    // nicht nach "412.5".
+    if (passt(e.desc, e.shop, e.type, e.note, e.cost, e.cost ? eur(e.cost) : '')) {
       const v = vehById(e.vehicleId);
       raus.push({ art: 'Eintrag', titel: e.desc || e.type,
         sub: [fmtD(e.date), e.shop, v ? (v.name || v.plate) : null].filter(Boolean).join(' · '),
@@ -2920,7 +2922,7 @@ function suche(q) {
   });
 
   S.docs.forEach(d => {
-    if (passt(d.title, d.name, d.category)) {
+    if (passt(d.title, d.name, d.category, d.note)) {
       raus.push({ art: 'Beleg', titel: d.title || d.name,
         sub: [d.category, d.date ? fmtD(d.date) : null].filter(Boolean).join(' · '),
         oeffne: () => openDoc(d.id) });
@@ -3427,8 +3429,12 @@ function erfassenKachel() {
 
 function einzelnesFahrzeug(m) {
   const ivs = forVeh(S.intervals).map(iv => ({ iv, ...intStatus(iv) }));
+  // Fristen gehoeren mit auf die Seite. Frueher erschienen sie nur in der
+  // Flottenansicht - mit einem einzigen Fahrzeug war eine angelegte Frist
+  // nirgends mehr zu sehen.
+  const frs = forVeh(S.deadlines || []).map(fr => ({ fr, ...fristStatus(fr) }));
   const counts = { over: 0, soon: 0, ok: 0 };
-  ivs.forEach(x => { if (counts[x.st] != null) counts[x.st]++; });
+  ivs.concat(frs).forEach(x => { if (counts[x.st] != null) counts[x.st]++; });
   const tuv = ivs.filter(x => /t[üu]v|hu|hauptunters/i.test(x.iv.kind)).sort((a, b) => (a.dueDate || 8.64e15) - (b.dueDate || 8.64e15))[0];
 
   // HERO – nächster TÜV, groß und sofort erkennbar
@@ -3440,6 +3446,11 @@ function einzelnesFahrzeug(m) {
     const meta = el('div', { class: 'metarow' }, el('span', { class: 'pill ' + tuv.st }, stLabel[tuv.st]), el('span', { class: 'veh' }, sub));
     if (curVeh === 'all') { const vv = vehById(tuv.iv.vehicleId); if (vv) meta.append(el('span', { class: 'veh' }, '· ' + vv.name)); }
     lead.append(meta);
+    // Der TUEV steht hier oben und deshalb nicht in der Liste darunter -
+    // also muss er sich auch hier abhaken lassen.
+    lead.append(el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:12px' },
+      el('button', { class: 'btn sm', onclick: () => erledigtModal('intervals', tuv.iv) }, 'Erledigt'),
+      el('button', { class: 'btn ghost sm', onclick: () => intervalModal(tuv.iv) }, 'Bearbeiten')));
   } else if (tuv) {
     // Termin vorhanden, aber ohne "zuletzt erledigt" nicht berechenbar.
     // Frueher stand hier faelschlich "Kein TÜV erfasst".
@@ -3478,7 +3489,7 @@ function einzelnesFahrzeug(m) {
 
   // Alle Wartungen auf einen Blick, nach Dringlichkeit sortiert: rot zuerst,
   // dann orange, dann gruen. Ein Klick fuehrt direkt zum Bearbeiten.
-  const alle = ivs.filter(x => !(tuv && x.iv.id === tuv.iv.id))
+  const alle = ivs.filter(x => !(tuv && x.iv.id === tuv.iv.id)).concat(frs)
     .sort((a, b) => rank(a.st) - rank(b.st) || ((a.days ?? 9e9) - (b.days ?? 9e9)));
   const blk = el('section', { class: 'block' }, el('h2', {}, 'Wartungen & Fälligkeiten'));
   if (!alle.length) {
@@ -3487,7 +3498,7 @@ function einzelnesFahrzeug(m) {
       el('div', {}, el('button', { class: 'btn', onclick: () => { setView('vehicle'); triggerRender(); } }, '+ Erinnerung anlegen'))));
   } else {
     const grid = el('div', { class: 'itemgrid' });
-    alle.forEach(x => grid.append(itemCard(x)));
+    alle.forEach(x => grid.append(x.fr ? fristKarte(x) : itemCard(x)));
     blk.append(grid);
   }
   m.append(blk);
@@ -3591,6 +3602,26 @@ function plakette(tuv) {
   return el('div', { class: 'plakette', html: svg });
 }
 
+/** Eine Frist als Kachel - dieselbe Form wie eine Wartung. */
+function fristKarte(x) {
+  const v = vehById(x.fr.vehicleId);
+  return el('div', {
+    class: 'item ' + x.st, title: 'Zum Bearbeiten anklicken',
+    onclick: () => fristModal(x.fr)
+  },
+    el('div', { class: 'top' },
+      el('span', { class: 'ampel ' + x.st }),
+      el('span', { class: 'ic' }, kindIcon(x.fr.kind || 'frist')),
+      el('span', { class: 'nm' }, x.fr.kind || 'Frist')),
+    el('div', { class: 'rows' },
+      el('div', {}, 'Frist: ', el('b', {}, x.dueDate ? fmtD(x.fr.date) : '–')),
+      el('div', {}, 'Rest: ', el('b', {}, restLabel(x)))),
+    el('div', { class: 'foot' }, el('span', { class: 'pill ' + x.st }, stLabel[x.st]),
+      (curVeh === 'all' && v) ? el('span', { class: 'veh', style: 'font-size:12px;color:var(--muted)' }, v.name) : el('span'),
+      el('button', { class: 'iconbtn', style: 'margin-left:auto',
+        onclick: ev => { ev.stopPropagation(); erledigtModal('deadlines', x.fr); } }, 'Erledigt')));
+}
+
 function itemCard(x) {
   const v = vehById(x.iv.vehicleId);
   const rows = el('div', { class: 'rows' });
@@ -3667,6 +3698,7 @@ function vFahrzeug(m) {
 
   m.append(stammdaten(v));
   m.append(faelligkeiten(v));
+  m.append(fristenBlock(v));
   m.append(reifen(v));
   m.append(papiere(v));
   m.append(notizen(v));
@@ -4069,6 +4101,42 @@ function stammdaten(v) {
 }
 
 /* --- Abschnitt Faelligkeiten: hier stehen sie vollstaendig --- */
+/**
+ * Einmalige Fristen des Fahrzeugs - Versicherungswechsel, Garantieende.
+ * Standen bisher auf der Fahrzeugseite gar nicht.
+ */
+function fristenBlock(v) {
+  const blk = el('section', { class: 'block' });
+  blk.append(el('div', { class: 'abschnitt-kopf' },
+    el('h2', {}, 'Fristen'),
+    el('button', { class: 'btn ghost sm', onclick: () => fristModal() }, '+ Frist')));
+  const liste = (S.deadlines || []).filter(fr => fr.vehicleId === v.id)
+    .map(fr => ({ fr, ...fristStatus(fr) }))
+    .sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9));
+  if (!liste.length) {
+    blk.append(el('div', { class: 'card empty' },
+      'Keine Fristen. Hier gehören einmalige Stichtage hin – Versicherungswechsel, '
+      + 'Garantieende, Leasingrückgabe.'));
+    return blk;
+  }
+  const wrap = el('div', { class: 'faellig-liste' });
+  liste.forEach(x => wrap.append(el('div', { class: 'faellig ' + x.st },
+    el('div', { class: 'ff-name' },
+      el('span', { class: 'ampel ' + x.st }),
+      el('span', { class: 'ic' }, kindIcon(x.fr.kind || 'frist')),
+      el('span', { class: 'nm' }, x.fr.kind || 'Frist')),
+    el('div', { class: 'ff-werte' },
+      el('span', { class: 'fw stark', title: 'Frist' }, el('span', { class: 'fw-s' }, '▸'), el('span', {}, fmtD(x.fr.date))),
+      el('span', { class: 'fw' + (x.st === 'over' ? ' warn' : ''), title: 'Verbleibend' },
+        el('span', { class: 'fw-s' }, '⏱'), el('span', {}, restLabel(x)))),
+    el('span', { class: 'pill ' + x.st }, stLabel[x.st]),
+    el('div', { class: 'rowact ff-akt' },
+      el('button', { class: 'iconbtn', onclick: () => erledigtModal('deadlines', x.fr) }, 'Erledigt'),
+      el('button', { class: 'iconbtn', onclick: () => fristModal(x.fr) }, 'Bearbeiten')))));
+  blk.append(wrap);
+  return blk;
+}
+
 function faelligkeiten(v) {
   const blk = el('section', { class: 'block' });
   blk.append(el('div', { style: 'display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap' },
@@ -4800,11 +4868,14 @@ function vSettings(m) {
       el('p', { id: 'kiText', style: 'margin-top:10px;font-size:13.5px;line-height:1.6;color:var(--n700)' },
         'Belege liest Claude oder Gemini. Der Zugangsschlüssel liegt auf dem Server, ' +
         'nicht in diesem Browser.'),
+      // Die Befehle helfen nur dem, der das Skript verwaltet - fuer alle
+      // anderen sind sie unverstaendlich.
+      (aktuellesProfil() && aktuellesProfil().rolle === 'verwalter') ?
       el('div', { class: 'mini', style: 'margin-top:8px;font-family:var(--mono);word-break:break-word;line-height:1.9' },
         'Im Skripteditor hinterlegen:', el('br'),
         'setzeClaudeSchluessel("…")', el('br'),
         'setzeGeminiSchluessel("…")', el('br'),
-        'setzeErkennung("claude" | "gemini" | "auto")')));
+        'setzeErkennung("claude" | "gemini" | "auto")') : null));
   m.append(kiBlock);
   stand().then(k => {
     const s = document.getElementById('kiStand');

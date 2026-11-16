@@ -1291,4 +1291,11 @@ button:not(:disabled):active,.btn:not(:disabled):active,
   font-size:.86rem;line-height:1.4}
 .ki-sperre input{width:20px;height:20px;margin-top:1px;flex:none}
 .ki-sperre small{display:block;color:var(--meta);font-size:.76rem;margin-top:2px}
+.item .nm{white-space:normal;overflow:visible;text-overflow:clip}
+/* Besuche, Summe, Zuletzt: drei kurze Werte nebeneinander statt je eine Zeile */
+.wst-karte .sd-raster{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:600px){
+  .wst-karte .sd-feld{padding-left:12px;padding-right:8px}
+  .wst-karte .sd-wert{font-size:.86rem;white-space:nowrap}
+}
 </style>
